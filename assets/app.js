@@ -138,16 +138,18 @@ function normalizeRow(r, rowNumber) {
 /* --------------------------------------------------------------------------
    Metrics / grouping / duplicates
    -------------------------------------------------------------------------- */
-const isCompleted = (s) => /complet|done|finish|live|won/i.test(s || "");
+const isCompleted = (s) => /complet|done|finish|live/i.test(s || "");
 const isScheduled = (s) => /schedul|book|set|progress|active/i.test(s || "");
+const isWon = (d) => /closed\s*won/i.test(d.demoStatus || "");        // converted = Demo Status "Closed Won"
+const isLost = (d) => !!(d.closedLost && String(d.closedLost).trim()) || /closed\s*lost/i.test(d.demoStatus || "");
 
 function computeMetrics(data) {
   const total = data.length;
   const demosCompleted = data.filter((d) => isCompleted(d.demoStatus)).length;
   const setupScheduled = data.filter((d) => isScheduled(d.setupStatus) || isCompleted(d.setupStatus) || d.setup1Date).length;
   const setupCompleted = data.filter((d) => isCompleted(d.setupStatus)).length;
-  const won = data.filter((d) => (d.mrr || 0) > 0).length;
-  const closedLost = data.filter((d) => d.closedLost).length;
+  const won = data.filter(isWon).length;
+  const closedLost = data.filter((d) => d.closedLost && String(d.closedLost).trim()).length;
   const csats = data.map((d) => d.csat).filter((n) => n != null);
   const avgCsat = csats.length ? csats.reduce((a, b) => a + b, 0) / csats.length : null;
   const mrrTotal = data.reduce((a, d) => a + (d.mrr || 0), 0);
@@ -155,6 +157,7 @@ function computeMetrics(data) {
   return {
     total, demosCompleted, setupScheduled, setupCompleted, won, closedLost,
     avgCsat, csatCount: csats.length, mrrTotal, preReqMet,
+    conversionRate: total ? won / total : 0,
     demoRate: total ? demosCompleted / total : 0,
     setupRate: demosCompleted ? setupCompleted / demosCompleted : 0,
     lostRate: total ? closedLost / total : 0,
@@ -221,6 +224,8 @@ const ICON = {
   star: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2l3.1 6.3 6.9 1-5 4.9 1.2 6.9L12 17.8 5.8 21l1.2-6.9-5-4.9 6.9-1z"/></svg>',
   money: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1v22M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>',
   lost: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M15 9l-6 6M9 9l6 6"/></svg>',
+  conv: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 6l-9.5 9.5-5-5L1 18"/><path d="M17 6h6v6"/></svg>',
+  won: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 21h8M12 17v4M7 4h10v5a5 5 0 0 1-10 0zM7 4H4v2a3 3 0 0 0 3 3M17 4h3v2a3 3 0 0 1-3 3"/></svg>',
 };
 const starSvg = (f) => `<svg viewBox="0 0 24 24" fill="${f ? "var(--lm-orange)" : "none"}" stroke="${f ? "var(--lm-orange)" : "var(--text-3)"}" stroke-width="1.6" stroke-linejoin="round"><path d="M12 2l3.1 6.3 6.9 1-5 4.9 1.2 6.9L12 17.8 5.8 21l1.2-6.9-5-4.9 6.9-1z"/></svg>`;
 
@@ -232,8 +237,9 @@ function renderKPIs(m) {
     { label: "Firms in Pipeline", val: m.total, icon: ICON.firms, accent: "var(--lm-blue)", soft: "rgba(6,139,255,.12)", sub: `<span class="chip neu">${m.preReqMet} pre-reqs met</span>` },
     { label: "Demos Completed", val: m.demosCompleted, icon: ICON.demo, accent: "var(--lm-cyan)", soft: "rgba(3,176,219,.12)", sub: `<span class="chip ${m.demoRate >= 0.5 ? "pos" : "neu"}">${fmtPct(m.demoRate)} of pipeline</span>` },
     { label: "Setups Completed", val: m.setupCompleted, icon: ICON.setup, accent: "#2f6db0", soft: "rgba(47,109,176,.14)", sub: `<span class="chip neu">${m.setupScheduled} scheduled</span>` },
+    { label: "Conversion Rate", val: fmtPct(m.conversionRate), icon: ICON.conv, accent: "var(--st-good)", soft: "rgba(12,163,90,.13)", sub: `<span class="chip pos">${m.won} closed won</span> <span class="chip neu">of ${m.total}</span>` },
     { label: "Avg Setup CSAT", val: m.avgCsat != null ? m.avgCsat.toFixed(1) : "—", unit: m.avgCsat != null ? "/5" : "", icon: ICON.star, accent: "var(--lm-orange)", soft: "rgba(247,99,0,.12)", sub: `<span class="chip neu">${m.csatCount} rated</span>` },
-    { label: "MRR Added", val: fmtMoney(m.mrrTotal), icon: ICON.money, accent: "var(--st-good)", soft: "rgba(12,163,90,.13)", sub: `<span class="chip pos">${m.won} firm${m.won === 1 ? "" : "s"} won</span>` },
+    { label: "MRR Added", val: fmtMoney(m.mrrTotal), icon: ICON.money, accent: "var(--lm-blue)", soft: "rgba(6,139,255,.12)", sub: `<span class="chip pos">${m.won} firm${m.won === 1 ? "" : "s"} won</span>` },
     { label: "Closed Lost", val: m.closedLost, icon: ICON.lost, accent: "var(--st-critical)", soft: "rgba(216,58,58,.12)", sub: `<span class="chip ${m.closedLost ? "neg" : "neu"}">${fmtPct(m.lostRate)} of pipeline</span>` },
   ];
   document.getElementById("kpis").innerHTML = tiles.map((t) => `
@@ -250,7 +256,7 @@ function renderFunnel(m) {
     { name: "Demos Completed", count: m.demosCompleted, color: "var(--fn-2)" },
     { name: "Setups Scheduled", count: m.setupScheduled, color: "var(--fn-3)" },
     { name: "Setups Completed", count: m.setupCompleted, color: "var(--fn-4)" },
-    { name: "Won (MRR added)", count: m.won, color: "var(--fn-5)" },
+    { name: "Closed Won", count: m.won, color: "var(--fn-5)" },
   ];
   const top = Math.max(1, stages[0].count);
   const el = document.getElementById("funnel");
@@ -268,16 +274,18 @@ function renderFunnel(m) {
   });
 }
 
-function renderDistribution(elId, dist) {
+function renderDistribution(elId, dist, opts = {}) {
   const el = document.getElementById(elId);
-  if (!dist.length) { el.innerHTML = `<div class="empty-note">No data yet.</div>`; return; }
+  if (!dist.length) { el.innerHTML = `<div class="empty-note">${opts.empty || "No data yet."}</div>`; return; }
   const max = Math.max(...dist.map((d) => d.count));
+  const total = dist.reduce((a, d) => a + d.count, 0);
   const sv = { good: "--st-good", info: "--st-info", warn: "--st-warn", serious: "--st-serious", critical: "--st-critical", neutral: "--st-neutral" };
   el.innerHTML = dist.map((d) => {
-    const color = `var(${sv[d.cls]})`;
+    const color = opts.color || `var(${sv[d.cls]})`;
+    const pct = opts.showPct && total ? ` <span class="bl-pct">${Math.round((d.count / total) * 100)}%</span>` : "";
     return `<div class="bl-row"><span class="bl-label"><span class="swatch" style="background:${color}"></span>${esc(d.label)}</span>
       <span class="bl-track"><span class="bl-bar" style="width:${Math.max(3, (d.count / max) * 100)}%;background:${color}"></span></span>
-      <span class="bl-val">${d.count}</span></div>`;
+      <span class="bl-val">${d.count}${pct}</span></div>`;
   }).join("");
 }
 
@@ -295,24 +303,57 @@ function renderCsat(m) {
 function renderReps(data) {
   const demoReps = groupBy(data.filter((d) => d.demoRep), (d) => d.demoRep, {
     completed: (rows) => rows.filter((r) => isCompleted(r.demoStatus)).length,
+    won: (rows) => rows.filter(isWon).length,
   }).sort((a, b) => b.count - a.count);
   const setupReps = groupBy(data.filter((d) => d.setupRep), (d) => d.setupRep, {
     completed: (rows) => rows.filter((r) => isCompleted(r.setupStatus)).length,
+    won: (rows) => rows.filter(isWon).length,
     avgCsat: (rows) => { const c = rows.map((r) => r.csat).filter((n) => n != null); return c.length ? c.reduce((a, b) => a + b, 0) / c.length : null; },
   }).sort((a, b) => b.count - a.count);
 
-  const repRow = (name, primary, secondary, max) =>
+  // Bar length = volume (count); the headline value = conversion rate.
+  const repRow = (name, count, max, conv) =>
     `<div class="bl-row"><span class="bl-label">${esc(name)}</span>
-     <span class="bl-track"><span class="bl-bar" style="width:${Math.max(3, (primary / max) * 100)}%;background:var(--lm-blue)"></span></span>
-     <span class="bl-val">${secondary}</span></div>`;
+     <span class="bl-track"><span class="bl-bar" style="width:${Math.max(3, (count / max) * 100)}%;background:var(--lm-blue)"></span></span>
+     <span class="bl-val">${fmtPct(conv)}<span class="bl-pct">conv</span></span></div>`;
 
   const dEl = document.getElementById("demoReps");
   if (!demoReps.length) dEl.innerHTML = `<div class="empty-note">No demo reps yet.</div>`;
-  else { const max = Math.max(...demoReps.map((r) => r.count)); dEl.innerHTML = demoReps.map((r) => repRow(r.name, r.count, `${r.completed}/${r.count}`, max)).join(""); }
+  else {
+    const max = Math.max(...demoReps.map((r) => r.count));
+    dEl.innerHTML = demoReps.map((r) => repRow(r.name, r.count, max, r.count ? r.won / r.count : 0)).join("");
+    dEl.querySelectorAll(".bl-row").forEach((row, i) => {
+      const r = demoReps[i];
+      bindTip(row, `<div class="tt-t">${esc(r.name)}</div><div class="tt-r"><span>Demos owned</span><b>${r.count}</b></div><div class="tt-r"><span>Completed</span><b>${r.completed}</b></div><div class="tt-r"><span>Closed won</span><b>${r.won}</b></div><div class="tt-r"><span>Conversion</span><b>${fmtPct(r.count ? r.won / r.count : 0)}</b></div>`);
+    });
+  }
 
   const sEl = document.getElementById("setupReps");
   if (!setupReps.length) sEl.innerHTML = `<div class="empty-note">No setup reps yet.</div>`;
-  else { const max = Math.max(...setupReps.map((r) => r.count)); sEl.innerHTML = setupReps.map((r) => repRow(r.name, r.count, r.avgCsat != null ? `${r.count} · ${r.avgCsat.toFixed(1)}★` : `${r.count}`, max)).join(""); }
+  else {
+    const max = Math.max(...setupReps.map((r) => r.count));
+    sEl.innerHTML = setupReps.map((r) => repRow(r.name, r.count, max, r.count ? r.won / r.count : 0)).join("");
+    sEl.querySelectorAll(".bl-row").forEach((row, i) => {
+      const r = setupReps[i];
+      const csat = r.avgCsat != null ? r.avgCsat.toFixed(1) + " / 5" : "—";
+      bindTip(row, `<div class="tt-t">${esc(r.name)}</div><div class="tt-r"><span>Setups owned</span><b>${r.count}</b></div><div class="tt-r"><span>Completed</span><b>${r.completed}</b></div><div class="tt-r"><span>Closed won</span><b>${r.won}</b></div><div class="tt-r"><span>Conversion</span><b>${fmtPct(r.count ? r.won / r.count : 0)}</b></div><div class="tt-r"><span>Avg CSAT</span><b>${csat}</b></div>`);
+    });
+  }
+}
+
+/* Closed Lost reasons breakdown */
+function renderLostReasons(data) {
+  const counts = {};
+  for (const d of data) {
+    const raw = d.closedLost && String(d.closedLost).trim();
+    if (!raw) continue;
+    counts[raw] = (counts[raw] || 0) + 1;
+  }
+  const dist = Object.entries(counts).map(([label, count]) => ({ label, count })).sort((a, b) => b.count - a.count);
+  renderDistribution("lostDist", dist, { color: "var(--st-critical)", showPct: true, empty: "No closed-lost firms yet." });
+  const n = dist.reduce((a, d) => a + d.count, 0);
+  const sub = document.getElementById("lostSub");
+  if (sub) sub.textContent = `${n} firm${n === 1 ? "" : "s"} closed lost`;
 }
 
 /* --------------------------------------------------------------------------
@@ -629,6 +670,7 @@ function renderDerived() {
   renderKPIs(m); renderFunnel(m); renderCsat(m);
   renderDistribution("demoDist", distribution(STATE.data, "demoStatus"));
   renderDistribution("setupDist", distribution(STATE.data, "setupStatus"));
+  renderLostReasons(STATE.data);
   renderReps(STATE.data);
   renderNeedsReview();
   document.getElementById("firmTotal").textContent = m.total;
@@ -871,18 +913,18 @@ function loadMock() {
   STATE.header = ["Firm Name","Firm ID","Demo Status","Demo Rep","Demo Date","Demo Rescheduled Date","Set up Status","Set up #1 date","Set up #2 date","Pre-set up requirements met?","Set up Rep","Set up CSAT","Closed lost reason","MRR increase"];
   STATE.cols = resolveColumns(STATE.header);
   const raw = [
-    ["VIP Law","2365","Completed","Justin","7/16/26","","Scheduled","7/17/26","7/20/26","TRUE","Rosa","5","","$150"],
+    ["VIP Law","2365","Closed Won","Justin","7/16/26","","Completed","7/17/26","7/20/26","TRUE","Rosa","5","","$150"],
     ["Harbor & Vance","2410","Completed","Priya","7/14/26","","Completed","7/15/26","","TRUE","Rosa","4","","$220"],
     ["Cedar Legal","2410","Scheduled","Marcus","7/18/26","","Not Started","","","FALSE","","","","" ],
-    ["Alderman LLP","2501","No Show","Priya","7/10/26","7/19/26","Not Started","","","FALSE","","","",""],
-    ["Brightwater Firm","2555","Completed","Justin","7/09/26","","Completed","7/11/26","7/13/26","TRUE","Dev","5","","$300"],
+    ["Alderman LLP","2501","Closed Lost","Priya","7/10/26","7/19/26","Not Started","","","FALSE","","","Price",""],
+    ["Brightwater Firm","2555","Closed Won","Justin","7/09/26","","Completed","7/11/26","7/13/26","TRUE","Dev","5","","$300"],
     ["Pinnacle Counsel","2560","Closed Lost","Marcus","7/08/26","","Not Started","","","FALSE","","","Chose competitor",""],
   ];
   STATE.data = raw.map((r, i) => normalizeRow(r, i + 2));
   STATE.dupIds = computeDuplicates(STATE.data);
   // Stand-in for the sheet's real data-validation dropdowns (fetched live in prod).
   STATE.validations = {
-    demoStatus:  { type: "list", options: ["Scheduled", "Completed", "Rescheduled", "No Show", "Cancelled", "Closed Lost"] },
+    demoStatus:  { type: "list", options: ["Scheduled", "Completed", "Rescheduled", "No Show", "Cancelled", "Closed Won", "Closed Lost"] },
     setupStatus: { type: "list", options: ["Not Started", "Scheduled", "In Progress", "Completed"] },
     csat:        { type: "list", options: ["1", "2", "3", "4", "5"] },
     preReq:      { type: "bool" },

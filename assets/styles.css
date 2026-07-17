@@ -203,7 +203,8 @@ body {
 .bl-label .swatch { width: 9px; height: 9px; border-radius: 3px; flex: none; }
 .bl-track { height: 12px; background: var(--surface-2); border-radius: 6px; overflow: hidden; }
 .bl-bar { height: 100%; border-radius: 6px; min-width: 3px; transition: width .5s cubic-bezier(.2,.7,.3,1); }
-.bl-val { font-size: 12.5px; font-weight: 700; color: var(--text-1); font-variant-numeric: tabular-nums; min-width: 20px; text-align: right; }
+.bl-val { font-size: 12.5px; font-weight: 700; color: var(--text-1); font-variant-numeric: tabular-nums; min-width: 20px; text-align: right; white-space: nowrap; }
+.bl-pct { font-size: 10.5px; font-weight: 600; color: var(--text-3); margin-left: 4px; }
 
 /* ============================ CSAT GAUGE ============================= */
 .csat-wrap { display: flex; align-items: center; gap: 22px; }
