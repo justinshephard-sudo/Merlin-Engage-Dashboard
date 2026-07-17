@@ -99,6 +99,7 @@ function toBool(v) {
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 
 function colLetter(n) { let s = ""; n++; while (n > 0) { const m = (n - 1) % 26; s = String.fromCharCode(65 + m) + s; n = Math.floor((n - 1) / 26); } return s; }
+function quoteTitle(t) { return "'" + String(t).replace(/'/g, "''") + "'"; }   // safe A1 sheet ref (handles spaces)
 
 function classifyStatus(raw) {
   const s = (raw || "").trim(), l = s.toLowerCase();
@@ -409,46 +410,47 @@ function cellHtml(d, c, dupCls) {
 }
 
 /* -------- inline editing -------- */
+
+/* Options a cell should offer as a dropdown, or null for free text.
+   Prefers the sheet's own data validation; falls back to sensible defaults so
+   categorical columns always show a populated dropdown even if validation
+   couldn't be read. */
+function choiceOptions(field, type) {
+  const rule = STATE.validations[field];
+  if (rule && rule.type === "list" && rule.options.length) return rule.options.slice();
+  if ((rule && rule.type === "bool") || type === "bool") return ["TRUE", "FALSE"];
+  if (field === "demoStatus" || field === "setupStatus") return [...new Set(distinctValues(field).concat(STATUS_SUGGEST))];
+  if (field === "csat") return ["1", "2", "3", "4", "5"];
+  return null;
+}
+
 function beginEdit(td) {
+  closeDropdown();
   if (activeEditor) cancelEdit();
-  if (MOCK) { /* editing allowed in mock, writes are stubbed */ }
   const row = +td.dataset.row, field = td.dataset.field, type = td.dataset.type;
   const d = STATE.data.find((x) => x._row === row);
   if (!d) return;
+
+  const options = choiceOptions(field, type);
+  if (options) { openDropdown(td, d, field, type, options); return; }   // dropdown columns
+
+  // free-text / number / date columns
   const cur = d[field];
   td.classList.add("editing");
   const prevHtml = td.innerHTML;
   let editor;
-
-  const rule = STATE.validations[field];                 // sheet dropdown, if any
-  const curStr = cur === true ? "TRUE" : cur === false ? "FALSE" : (cur ?? "");
-
-  if (rule && rule.type === "list") {
-    // Exact dropdown from the sheet's data validation.
-    editor = document.createElement("select");
-    const opts = [`<option value="">—</option>`];
-    const has = rule.options.some((o) => String(o) === String(curStr));
-    if (curStr !== "" && !has) opts.push(`<option value="${esc(curStr)}" selected>${esc(curStr)} (off-list)</option>`);
-    for (const o of rule.options) opts.push(`<option value="${esc(o)}"${String(o) === String(curStr) ? " selected" : ""}>${esc(o)}</option>`);
-    editor.innerHTML = opts.join("");
-  } else if ((rule && rule.type === "bool") || type === "bool") {
-    editor = document.createElement("select");
-    editor.innerHTML = `<option value="">—</option><option value="TRUE">TRUE</option><option value="FALSE">FALSE</option>`;
-    editor.value = cur === true ? "TRUE" : cur === false ? "FALSE" : "";
-  } else if (type === "status" || type === "rep") {
-    // No sheet dropdown on this column → free text with suggestions from existing values.
+  if (type === "rep") {
     const listId = `dl-${field}`;
-    ensureDatalist(listId, distinctValues(field).concat(type === "status" ? STATUS_SUGGEST : []));
+    ensureDatalist(listId, distinctValues(field));
     editor = document.createElement("input");
     editor.setAttribute("list", listId);
     editor.value = cur || "";
   } else if (type === "num") {
-    editor = document.createElement("input"); editor.type = "number"; editor.min = "0"; editor.max = "5"; editor.step = "1"; editor.value = cur ?? "";
+    editor = document.createElement("input"); editor.type = "number"; editor.step = "1"; editor.value = cur ?? "";
   } else {
     editor = document.createElement("input"); editor.type = "text"; editor.value = (type === "money" && cur != null) ? cur : (cur || "");
   }
   editor.className = "cell-editor";
-  const isSelect = editor.tagName === "SELECT";
   td.innerHTML = "";
   td.appendChild(editor);
   editor.focus();
@@ -459,7 +461,6 @@ function beginEdit(td) {
     if (e.key === "Enter") { e.preventDefault(); commitEdit(); }
     else if (e.key === "Escape") { e.preventDefault(); cancelEdit(); }
   });
-  if (isSelect) editor.addEventListener("change", () => { if (activeEditor && activeEditor.editor === editor) commitEdit(); });
   editor.addEventListener("blur", () => { if (activeEditor && activeEditor.editor === editor) commitEdit(); });
 }
 
@@ -468,51 +469,111 @@ function cancelEdit() {
   const { td, prevHtml } = activeEditor;
   td.classList.remove("editing");
   td.innerHTML = prevHtml;
+  rebindCell(td);
   activeEditor = null;
 }
 
-async function commitEdit() {
+function commitEdit() {
   if (!activeEditor) return;
-  const { td, editor, row, field, type, d } = activeEditor;
-  const raw = editor.value.trim();
+  const { td, field, type, d, editor } = activeEditor;
+  const raw = editor.value;
+  activeEditor = null;
+  applyEdit(td, d, field, type, raw);
+}
 
-  // Parse the entered value into our normalized shape + the string we send to Sheets.
-  let newVal, sheetVal = raw;
-  if (type === "bool") { newVal = raw === "TRUE" ? true : raw === "FALSE" ? false : null; sheetVal = raw; }
-  else if (type === "num") { newVal = raw === "" ? null : toNumber(raw); sheetVal = raw; }
-  else if (type === "money") { newVal = raw === "" ? null : toNumber(raw); sheetVal = raw; }
-  else { newVal = raw; sheetVal = raw; }
+/* -------- floating dropdown: renders over the panel, never clipped -------- */
+let ddState = null;
+function openDropdown(td, d, field, type, options) {
+  closeDropdown();
+  td.classList.add("editing");
+  const curStr = d[field] === true ? "TRUE" : d[field] === false ? "FALSE" : String(d[field] ?? "");
+  const list = options.map(String);
+
+  const pop = document.createElement("div");
+  pop.className = "dd-pop";
+  const items = [`<button type="button" class="dd-item dd-clear" data-v="">— clear</button>`];
+  if (curStr !== "" && !list.includes(curStr))
+    items.push(`<button type="button" class="dd-item dd-cur" data-v="${esc(curStr)}">${esc(curStr)}<span class="dd-tag">current · off-list</span></button>`);
+  for (const o of list)
+    items.push(`<button type="button" class="dd-item${o === curStr ? " sel" : ""}" data-v="${esc(o)}">${esc(o)}${o === curStr ? '<span class="dd-check">✓</span>' : ""}</button>`);
+  pop.innerHTML = `<div class="dd-scroll">${items.join("")}</div>`;
+  document.body.appendChild(pop);
+  positionDropdown(pop, td);
+
+  ddState = { pop, td, d, field, type };
+  pop.querySelectorAll(".dd-item").forEach((btn) => btn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    const ctx = ddState, v = btn.dataset.v;
+    closeDropdown();
+    applyEdit(ctx.td, ctx.d, ctx.field, ctx.type, v);
+  }));
+  const sel = pop.querySelector(".dd-item.sel");
+  if (sel) sel.scrollIntoView({ block: "nearest" });
+
+  setTimeout(() => document.addEventListener("mousedown", ddOutside, true), 0);
+  document.addEventListener("keydown", ddKey, true);
+  window.addEventListener("scroll", closeDropdown, true);
+  window.addEventListener("resize", closeDropdown, true);
+}
+function positionDropdown(pop, td) {
+  const r = td.getBoundingClientRect();
+  const w = Math.max(r.width, 190);
+  pop.style.width = w + "px";
+  pop.style.left = Math.max(8, Math.min(r.left, window.innerWidth - w - 8)) + "px";
+  const popH = pop.offsetHeight;
+  if (window.innerHeight - r.bottom < popH + 10 && r.top > popH + 10) pop.style.top = (r.top - popH - 4) + "px";
+  else pop.style.top = (r.bottom + 4) + "px";
+}
+function ddOutside(e) { if (ddState && !ddState.pop.contains(e.target)) closeDropdown(); }
+function ddKey(e) { if (e.key === "Escape") { e.preventDefault(); closeDropdown(); } }
+function closeDropdown() {
+  if (!ddState) return;
+  const { pop, td } = ddState;
+  ddState = null;
+  pop.remove();
+  if (!td.classList.contains("saving") && !td.classList.contains("saved")) td.classList.remove("editing");
+  document.removeEventListener("mousedown", ddOutside, true);
+  document.removeEventListener("keydown", ddKey, true);
+  window.removeEventListener("scroll", closeDropdown, true);
+  window.removeEventListener("resize", closeDropdown, true);
+}
+
+/* -------- apply an edit + optimistic write-back (shared by input & dropdown) -------- */
+async function applyEdit(td, d, field, type, raw) {
+  raw = (raw ?? "").toString().trim();
+  let newVal;
+  if (type === "bool") newVal = raw === "TRUE" ? true : raw === "FALSE" ? false : null;
+  else if (type === "num" || type === "money") newVal = raw === "" ? null : toNumber(raw);
+  else newVal = raw;
 
   const oldVal = d[field];
-  const unchanged = (type === "num" || type === "money") ? (toNumber(oldVal) === toNumber(raw) || (oldVal == null && raw === ""))
+  const unchanged = (type === "num" || type === "money")
+    ? (toNumber(oldVal) === toNumber(raw) || (oldVal == null && raw === ""))
     : String(oldVal ?? "") === String(newVal ?? "");
-  activeEditor = null;
+  if (unchanged) { td.classList.remove("editing"); td.innerHTML = displayValueWrap(d, field); rebindCell(td); return; }
 
-  if (unchanged) { td.classList.remove("editing"); td.innerHTML = displayValueWrap(d, field); return; }
-
-  // optimistic
   td.classList.remove("editing");
   td.classList.add("saving");
   td.innerHTML = `<span class="cell-spinner"></span>`;
-
   try {
-    await writeCell(row, field, sheetVal);
-    d[field] = newVal;                 // commit locally
+    await writeCell(d._row, field, raw);
+    d[field] = newVal;
     STATE.dupIds = computeDuplicates(STATE.data);
     td.classList.remove("saving");
     td.classList.add("saved");
-    renderDerived();                   // KPIs, funnel, reps, review — keep table intact except this cell
-    // refresh just this cell's display + dup styling
+    renderDerived();
     refreshCell(td, d, field);
     setTimeout(() => td.classList.remove("saved"), 1200);
   } catch (err) {
     td.classList.remove("saving");
     td.classList.add("save-err");
     td.innerHTML = displayValueWrap(d, field);
+    rebindCell(td);
     toast(`Couldn't save ${field}: ${err.message}`, "err");
     setTimeout(() => td.classList.remove("save-err"), 2000);
   }
 }
+function rebindCell(td) { td.onclick = () => beginEdit(td); }
 
 function displayValueWrap(d, field) {
   const c = TABLE_COLS.find((x) => x.field === field);
@@ -587,7 +648,7 @@ async function resolveSheetTitle() {
 async function loadData() {
   if (MOCK) return loadMock();
   if (!STATE.sheetTitle) await resolveSheetTitle();
-  const range = encodeURIComponent(STATE.sheetTitle);
+  const range = encodeURIComponent(quoteTitle(STATE.sheetTitle));
   const json = await apiFetch(`https://sheets.googleapis.com/v4/spreadsheets/${CONFIG.SHEET_ID}/values/${range}?majorDimension=ROWS`);
   const values = json.values || [];
   STATE.header = values[0] || [];
@@ -605,7 +666,7 @@ async function loadValidations() {
   STATE.validations = {};
   try {
     const lastCol = colLetter(Math.max(0, (STATE.header.length || 14) - 1));
-    const range = `${STATE.sheetTitle}!A2:${lastCol}200`;
+    const range = `${quoteTitle(STATE.sheetTitle)}!A2:${lastCol}200`;
     const fields = "sheets(data(rowData(values(dataValidation))))";
     const url = `https://sheets.googleapis.com/v4/spreadsheets/${CONFIG.SHEET_ID}?ranges=${encodeURIComponent(range)}&includeGridData=true&fields=${encodeURIComponent(fields)}`;
     const json = await apiFetch(url);
@@ -650,7 +711,7 @@ async function loadValidations() {
 async function writeCell(rowNumber, field, value) {
   const colIdx = STATE.cols[field];
   if (colIdx == null || colIdx < 0) throw new Error(`column "${field}" not found in sheet`);
-  const a1 = `${STATE.sheetTitle}!${colLetter(colIdx)}${rowNumber}`;
+  const a1 = `${quoteTitle(STATE.sheetTitle)}!${colLetter(colIdx)}${rowNumber}`;
   if (MOCK) { await new Promise((r) => setTimeout(r, 350)); return; }   // simulate latency
   const url = `https://sheets.googleapis.com/v4/spreadsheets/${CONFIG.SHEET_ID}/values/${encodeURIComponent(a1)}?valueInputOption=USER_ENTERED`;
   await apiFetch(url, { method: "PUT", body: JSON.stringify({ range: a1, majorDimension: "ROWS", values: [[value]] }) });
