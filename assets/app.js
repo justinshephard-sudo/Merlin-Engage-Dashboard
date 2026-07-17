@@ -384,7 +384,10 @@ function renderTable() {
     return `<tr data-row="${d._row}">${TABLE_COLS.map((c) => cellHtml(d, c, dupCls)).join("")}</tr>`;
   }).join("") : `<tr><td colspan="${TABLE_COLS.length}"><div class="empty-note">No firms match “${esc(query)}”.</div></td></tr>`;
 
-  document.getElementById("tableWrap").innerHTML = `<table><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table>`;
+  const wrapEl = document.getElementById("tableWrap");
+  const keepScroll = wrapEl.scrollLeft;                 // preserve horizontal position across re-render (e.g. while searching)
+  wrapEl.innerHTML = `<table><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table>`;
+  wrapEl.scrollLeft = keepScroll;
 
   document.querySelectorAll("thead th").forEach((th) => th.addEventListener("click", () => {
     const k = th.dataset.key;
@@ -457,11 +460,19 @@ function beginEdit(td) {
   if (editor.select) editor.select();
 
   activeEditor = { td, editor, prevHtml, row, field, type, d };
+  // Ignore the focus churn caused by the opening click (esp. when focus was in
+  // the search box) — otherwise the editor blurs & closes the instant it opens.
+  let settling = true;
+  setTimeout(() => { settling = false; }, 250);
   editor.addEventListener("keydown", (e) => {
     if (e.key === "Enter") { e.preventDefault(); commitEdit(); }
     else if (e.key === "Escape") { e.preventDefault(); cancelEdit(); }
   });
-  editor.addEventListener("blur", () => { if (activeEditor && activeEditor.editor === editor) commitEdit(); });
+  editor.addEventListener("blur", () => {
+    if (!activeEditor || activeEditor.editor !== editor) return;
+    if (settling) { settling = false; editor.focus(); return; }   // re-grab focus once, right after opening
+    commitEdit();
+  });
 }
 
 function cancelEdit() {
