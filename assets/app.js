@@ -865,6 +865,7 @@ function loadMock() {
     setupStatus: { type: "list", options: ["Not Started", "Scheduled", "In Progress", "Completed"] },
     csat:        { type: "list", options: ["1", "2", "3", "4", "5"] },
     preReq:      { type: "bool" },
+    closedLost:  { type: "list", options: ["Chose competitor", "Price", "No response", "Not a fit", "Timing", "Went in-house"] },
   };
 }
 
