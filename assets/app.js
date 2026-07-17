@@ -512,7 +512,7 @@ function openDropdown(td, d, field, type, options) {
 
   setTimeout(() => document.addEventListener("mousedown", ddOutside, true), 0);
   document.addEventListener("keydown", ddKey, true);
-  window.addEventListener("scroll", closeDropdown, true);
+  window.addEventListener("scroll", ddScroll, true);
   window.addEventListener("resize", closeDropdown, true);
 }
 function positionDropdown(pop, td) {
@@ -520,10 +520,20 @@ function positionDropdown(pop, td) {
   const w = Math.max(r.width, 190);
   pop.style.width = w + "px";
   pop.style.left = Math.max(8, Math.min(r.left, window.innerWidth - w - 8)) + "px";
+
+  // Size the list to the space actually available so it always fits and scrolls.
+  const margin = 10, gap = 6;
+  const spaceBelow = window.innerHeight - r.bottom - margin;
+  const spaceAbove = r.top - margin;
+  const openUp = spaceBelow < 200 && spaceAbove > spaceBelow;
+  const avail = Math.max(120, openUp ? spaceAbove : spaceBelow);
+  const scroll = pop.querySelector(".dd-scroll");
+  if (scroll) scroll.style.maxHeight = Math.min(300, avail - 12) + "px";
   const popH = pop.offsetHeight;
-  if (window.innerHeight - r.bottom < popH + 10 && r.top > popH + 10) pop.style.top = (r.top - popH - 4) + "px";
-  else pop.style.top = (r.bottom + 4) + "px";
+  pop.style.top = (openUp ? (r.top - popH - gap) : (r.bottom + gap)) + "px";
 }
+// Close on page/table scroll, but NOT when scrolling inside the dropdown itself.
+function ddScroll(e) { if (ddState && ddState.pop.contains(e.target)) return; closeDropdown(); }
 function ddOutside(e) { if (ddState && !ddState.pop.contains(e.target)) closeDropdown(); }
 function ddKey(e) { if (e.key === "Escape") { e.preventDefault(); closeDropdown(); } }
 function closeDropdown() {
@@ -534,7 +544,7 @@ function closeDropdown() {
   if (!td.classList.contains("saving") && !td.classList.contains("saved")) td.classList.remove("editing");
   document.removeEventListener("mousedown", ddOutside, true);
   document.removeEventListener("keydown", ddKey, true);
-  window.removeEventListener("scroll", closeDropdown, true);
+  window.removeEventListener("scroll", ddScroll, true);
   window.removeEventListener("resize", closeDropdown, true);
 }
 
