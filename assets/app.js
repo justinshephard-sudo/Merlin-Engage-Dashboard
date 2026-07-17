@@ -142,10 +142,12 @@ const isCompleted = (s) => /complet|done|finish|live/i.test(s || "");
 const isScheduled = (s) => /schedul|book|set|progress|active/i.test(s || "");
 const isWon = (d) => /closed\s*won/i.test(d.demoStatus || "");        // converted = Demo Status "Closed Won"
 const isLost = (d) => !!(d.closedLost && String(d.closedLost).trim()) || /closed\s*lost/i.test(d.demoStatus || "");
+// A demo counts as completed when it's marked Completed OR resolved as Closed Won / Closed Lost.
+const isDemoDone = (d) => isCompleted(d.demoStatus) || /closed\s*(won|lost)/i.test(d.demoStatus || "");
 
 function computeMetrics(data) {
   const total = data.length;
-  const demosCompleted = data.filter((d) => isCompleted(d.demoStatus)).length;
+  const demosCompleted = data.filter(isDemoDone).length;
   const setupScheduled = data.filter((d) => isScheduled(d.setupStatus) || isCompleted(d.setupStatus) || d.setup1Date).length;
   const setupCompleted = data.filter((d) => isCompleted(d.setupStatus)).length;
   const won = data.filter(isWon).length;
@@ -302,7 +304,7 @@ function renderCsat(m) {
 
 function renderReps(data) {
   const demoReps = groupBy(data.filter((d) => d.demoRep), (d) => d.demoRep, {
-    completed: (rows) => rows.filter((r) => isCompleted(r.demoStatus)).length,
+    completed: (rows) => rows.filter(isDemoDone).length,
     won: (rows) => rows.filter(isWon).length,
   }).sort((a, b) => b.count - a.count);
   const setupReps = groupBy(data.filter((d) => d.setupRep), (d) => d.setupRep, {
