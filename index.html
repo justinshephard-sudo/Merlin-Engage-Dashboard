@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Merlin Engage — Onboarding Dashboard</title>
+  <meta name="description" content="Live onboarding pipeline dashboard for Merlin Engage — demos, setups, CSAT & MRR." />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="assets/styles.css" />
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Crect width='24' height='24' rx='6' fill='%23068bff'/%3E%3Cpath d='M5 16l3-8 4 6 4-9 3 11' fill='none' stroke='white' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E" />
+</head>
+<body>
+  <!-- ============================ HEADER ============================ -->
+  <header class="topbar">
+    <div class="topbar-inner">
+      <div class="brand">
+        <span class="brand-mark">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 17l4-9 4 6 3-7 5 11"/></svg>
+        </span>
+        <div class="brand-text">
+          <h1>Merlin Engage · Onboarding Dashboard</h1>
+          <p>Live demo &amp; setup pipeline · <span class="lm">Lawmatics</span> Customer Success</p>
+        </div>
+      </div>
+      <div class="topbar-actions">
+        <span class="live-badge" id="liveBadge"><span class="dot"></span><span class="txt">Loading…</span></span>
+        <button class="icon-btn" id="refreshBtn" title="Refresh now" aria-label="Refresh">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 4v6h-6M1 20v-6h6"/><path d="M3.5 9a9 9 0 0 1 14.9-3.4L23 10M1 14l4.6 4.4A9 9 0 0 0 20.5 15"/></svg>
+        </button>
+        <button class="icon-btn" id="themeBtn" title="Toggle light / dark" aria-label="Toggle theme">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <div class="meta-line">
+    <span>Tracking <b id="firmTotal">—</b> firms</span>
+    <span>·</span>
+    <span>Last updated <b id="updated">—</b></span>
+    <span>·</span>
+    <span>Auto-refreshes every 5&nbsp;min</span>
+  </div>
+
+  <main class="wrap">
+    <!-- ============================ ERROR STATE ============================ -->
+    <div id="errState" class="state hidden">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M10.3 3.9L1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/><path d="M12 9v4M12 17h.01"/></svg>
+      <h3>Can't load the dashboard</h3>
+      <p id="errMsg"></p>
+    </div>
+
+    <!-- ============================ CONTENT ============================ -->
+    <div id="content" class="hidden">
+      <!-- KPI tiles -->
+      <section class="section">
+        <div class="kpi-grid" id="kpis"></div>
+      </section>
+
+      <!-- Funnel + CSAT -->
+      <section class="section">
+        <div class="section-head"><h2>Pipeline</h2><span class="rule"></span></div>
+        <div class="grid-2 wide">
+          <div class="panel">
+            <div class="panel-head">
+              <div><div class="panel-title">Onboarding Funnel</div><div class="panel-sub">Firms progressing from demo to won</div></div>
+            </div>
+            <div class="funnel" id="funnel"></div>
+          </div>
+          <div class="panel">
+            <div class="panel-head">
+              <div><div class="panel-title">Setup Satisfaction</div><div class="panel-sub">Average CSAT after setup</div></div>
+            </div>
+            <div id="csat"></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Status breakdowns -->
+      <section class="section">
+        <div class="section-head"><h2>Status Breakdown</h2><span class="rule"></span></div>
+        <div class="grid-2">
+          <div class="panel">
+            <div class="panel-head"><div><div class="panel-title">Demo Status</div><div class="panel-sub">Distribution across all firms</div></div></div>
+            <div class="barlist" id="demoDist"></div>
+          </div>
+          <div class="panel">
+            <div class="panel-head"><div><div class="panel-title">Setup Status</div><div class="panel-sub">Distribution across all firms</div></div></div>
+            <div class="barlist" id="setupDist"></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Reps -->
+      <section class="section">
+        <div class="section-head"><h2>Rep Performance</h2><span class="rule"></span></div>
+        <div class="grid-2">
+          <div class="panel">
+            <div class="panel-head"><div><div class="panel-title">Demo Reps</div><div class="panel-sub">Demos owned · completed / total</div></div></div>
+            <div class="barlist" id="demoReps"></div>
+          </div>
+          <div class="panel">
+            <div class="panel-head"><div><div class="panel-title">Setup Reps</div><div class="panel-sub">Setups owned · count · avg CSAT</div></div></div>
+            <div class="barlist" id="setupReps"></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Table -->
+      <section class="section">
+        <div class="section-head"><h2>All Firms</h2><span class="rule"></span></div>
+        <div class="panel">
+          <div class="table-tools">
+            <label class="search">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.3-4.3"/></svg>
+              <input id="search" type="text" placeholder="Search firms, reps, statuses…" />
+            </label>
+            <span class="count-pill" id="rowCount">—</span>
+          </div>
+          <div class="table-scroll" id="tableWrap"></div>
+        </div>
+      </section>
+    </div>
+
+    <p class="foot">
+      Merlin Engage Onboarding Dashboard · data reads live from the
+      <a id="sheetLink" href="https://docs.google.com/spreadsheets/d/1xWc_E48--rSjxA-3oBIKSBq1kDn-43OdbTrRsr88mYA/edit" target="_blank" rel="noopener">tracker sheet</a>
+    </p>
+  </main>
+
+  <div id="tip"></div>
+  <script src="assets/app.js"></script>
+</body>
+</html>
