@@ -37,6 +37,7 @@ const STATE = {
   cols: {},
   data: [],            // normalized rows (each has ._row = absolute sheet row)
   dupIds: new Set(),
+  validations: {},     // field -> { type: 'list', options: [...] } | { type: 'bool' }
 };
 
 /* --------------------------------------------------------------------------
@@ -419,22 +420,35 @@ function beginEdit(td) {
   const prevHtml = td.innerHTML;
   let editor;
 
-  if (type === "status" || type === "rep") {
+  const rule = STATE.validations[field];                 // sheet dropdown, if any
+  const curStr = cur === true ? "TRUE" : cur === false ? "FALSE" : (cur ?? "");
+
+  if (rule && rule.type === "list") {
+    // Exact dropdown from the sheet's data validation.
+    editor = document.createElement("select");
+    const opts = [`<option value="">—</option>`];
+    const has = rule.options.some((o) => String(o) === String(curStr));
+    if (curStr !== "" && !has) opts.push(`<option value="${esc(curStr)}" selected>${esc(curStr)} (off-list)</option>`);
+    for (const o of rule.options) opts.push(`<option value="${esc(o)}"${String(o) === String(curStr) ? " selected" : ""}>${esc(o)}</option>`);
+    editor.innerHTML = opts.join("");
+  } else if ((rule && rule.type === "bool") || type === "bool") {
+    editor = document.createElement("select");
+    editor.innerHTML = `<option value="">—</option><option value="TRUE">TRUE</option><option value="FALSE">FALSE</option>`;
+    editor.value = cur === true ? "TRUE" : cur === false ? "FALSE" : "";
+  } else if (type === "status" || type === "rep") {
+    // No sheet dropdown on this column → free text with suggestions from existing values.
     const listId = `dl-${field}`;
     ensureDatalist(listId, distinctValues(field).concat(type === "status" ? STATUS_SUGGEST : []));
     editor = document.createElement("input");
     editor.setAttribute("list", listId);
     editor.value = cur || "";
-  } else if (type === "bool") {
-    editor = document.createElement("select");
-    editor.innerHTML = `<option value="">—</option><option value="TRUE">TRUE</option><option value="FALSE">FALSE</option>`;
-    editor.value = cur === true ? "TRUE" : cur === false ? "FALSE" : "";
   } else if (type === "num") {
     editor = document.createElement("input"); editor.type = "number"; editor.min = "0"; editor.max = "5"; editor.step = "1"; editor.value = cur ?? "";
   } else {
     editor = document.createElement("input"); editor.type = "text"; editor.value = (type === "money" && cur != null) ? cur : (cur || "");
   }
   editor.className = "cell-editor";
+  const isSelect = editor.tagName === "SELECT";
   td.innerHTML = "";
   td.appendChild(editor);
   editor.focus();
@@ -445,6 +459,7 @@ function beginEdit(td) {
     if (e.key === "Enter") { e.preventDefault(); commitEdit(); }
     else if (e.key === "Escape") { e.preventDefault(); cancelEdit(); }
   });
+  if (isSelect) editor.addEventListener("change", () => { if (activeEditor && activeEditor.editor === editor) commitEdit(); });
   editor.addEventListener("blur", () => { if (activeEditor && activeEditor.editor === editor) commitEdit(); });
 }
 
@@ -581,6 +596,55 @@ async function loadData() {
     .map((r, i) => normalizeRow(r, i + 2))         // sheet row = index + 2 (header is row 1)
     .filter((d) => d.firmName || d.firmId);
   STATE.dupIds = computeDuplicates(STATE.data);
+  await loadValidations();
+}
+
+/* Read the sheet's data-validation (dropdown) rules so the inline editors
+   offer exactly the same options the sheet does. Non-fatal on failure. */
+async function loadValidations() {
+  STATE.validations = {};
+  try {
+    const lastCol = colLetter(Math.max(0, (STATE.header.length || 14) - 1));
+    const range = `${STATE.sheetTitle}!A2:${lastCol}200`;
+    const fields = "sheets(data(rowData(values(dataValidation))))";
+    const url = `https://sheets.googleapis.com/v4/spreadsheets/${CONFIG.SHEET_ID}?ranges=${encodeURIComponent(range)}&includeGridData=true&fields=${encodeURIComponent(fields)}`;
+    const json = await apiFetch(url);
+    const rowData = json.sheets?.[0]?.data?.[0]?.rowData || [];
+
+    const pendingRanges = {};       // field -> A1 range ref (ONE_OF_RANGE)
+    const refSet = new Set();
+    for (const [field, colIdx] of Object.entries(STATE.cols)) {
+      if (colIdx == null || colIdx < 0) continue;
+      for (const rd of rowData) {
+        const dv = rd.values?.[colIdx]?.dataValidation;
+        if (!dv || !dv.condition) continue;
+        const t = dv.condition.type;
+        if (t === "ONE_OF_LIST") {
+          STATE.validations[field] = { type: "list", options: (dv.condition.values || []).map((v) => v.userEnteredValue).filter((x) => x != null && x !== "") };
+        } else if (t === "ONE_OF_RANGE") {
+          const ref = (dv.condition.values?.[0]?.userEnteredValue || "").replace(/^=/, "");
+          if (ref) { pendingRanges[field] = ref; refSet.add(ref); }
+        } else if (t === "BOOLEAN") {
+          STATE.validations[field] = { type: "bool" };
+        }
+        break; // first row carrying a rule for this column is enough
+      }
+    }
+
+    // Resolve dropdowns backed by a range (ONE_OF_RANGE).
+    if (refSet.size) {
+      const refs = [...refSet];
+      const qs = refs.map((r) => `ranges=${encodeURIComponent(r)}`).join("&");
+      const b = await apiFetch(`https://sheets.googleapis.com/v4/spreadsheets/${CONFIG.SHEET_ID}/values:batchGet?${qs}&majorDimension=COLUMNS`);
+      const byRef = {};
+      (b.valueRanges || []).forEach((vr, i) => { byRef[refs[i]] = (vr.values?.[0] || []).filter((x) => x !== ""); });
+      for (const [field, ref] of Object.entries(pendingRanges)) {
+        if (byRef[ref] && byRef[ref].length) STATE.validations[field] = { type: "list", options: byRef[ref] };
+      }
+    }
+  } catch (e) {
+    console.warn("Couldn't read sheet dropdowns; falling back to suggestions.", e);
+  }
 }
 
 async function writeCell(rowNumber, field, value) {
@@ -734,6 +798,13 @@ function loadMock() {
   ];
   STATE.data = raw.map((r, i) => normalizeRow(r, i + 2));
   STATE.dupIds = computeDuplicates(STATE.data);
+  // Stand-in for the sheet's real data-validation dropdowns (fetched live in prod).
+  STATE.validations = {
+    demoStatus:  { type: "list", options: ["Scheduled", "Completed", "Rescheduled", "No Show", "Cancelled", "Closed Lost"] },
+    setupStatus: { type: "list", options: ["Not Started", "Scheduled", "In Progress", "Completed"] },
+    csat:        { type: "list", options: ["1", "2", "3", "4", "5"] },
+    preReq:      { type: "bool" },
+  };
 }
 
 /* --------------------------------------------------------------------------
