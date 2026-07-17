@@ -15,7 +15,7 @@
    (SHEET_ID / GID already point at the tracker.)
    -------------------------------------------------------------------------- */
 const CONFIG = {
-  CLIENT_ID: "",                       // <-- paste your OAuth client ID here
+  CLIENT_ID: "1056458394718-fk8r113mqg2f55a9il4d4kg2a745d3ns.apps.googleusercontent.com",
   SHEET_ID: "1xWc_E48--rSjxA-3oBIKSBq1kDn-43OdbTrRsr88mYA",
   GID: 0,                              // the numeric tab id (from #gid= in the URL)
   ALLOWED_DOMAIN: "lawmatics.com",
