@@ -140,10 +140,10 @@ function normalizeRow(r, rowNumber) {
    -------------------------------------------------------------------------- */
 const isCompleted = (s) => /complet|done|finish|live/i.test(s || "");
 const isScheduled = (s) => /schedul|book|set|progress|active/i.test(s || "");
-const isWon = (d) => /closed\s*won/i.test(d.demoStatus || "");        // converted = Demo Status "Closed Won"
-const isLost = (d) => !!(d.closedLost && String(d.closedLost).trim()) || /closed\s*lost/i.test(d.demoStatus || "");
-// A demo counts as completed when it's marked Completed OR resolved as Closed Won / Closed Lost.
-const isDemoDone = (d) => isCompleted(d.demoStatus) || /closed\s*(won|lost)/i.test(d.demoStatus || "");
+const isWon = (d) => /won/i.test(d.demoStatus || "");                 // converted = Demo Status "Completed - Won"
+const isLost = (d) => /lost/i.test(d.demoStatus || "") || !!(d.closedLost && String(d.closedLost).trim());
+// A demo counts as completed when it's Completed, or resolved Won / Lost.
+const isDemoDone = (d) => isCompleted(d.demoStatus) || /won|lost/i.test(d.demoStatus || "");
 
 function computeMetrics(data) {
   const total = data.length;
@@ -239,7 +239,7 @@ function renderKPIs(m) {
     { label: "Firms in Pipeline", val: m.total, icon: ICON.firms, accent: "var(--lm-blue)", soft: "rgba(6,139,255,.12)", sub: `<span class="chip neu">${m.preReqMet} pre-reqs met</span>` },
     { label: "Demos Completed", val: m.demosCompleted, icon: ICON.demo, accent: "var(--lm-cyan)", soft: "rgba(3,176,219,.12)", sub: `<span class="chip ${m.demoRate >= 0.5 ? "pos" : "neu"}">${fmtPct(m.demoRate)} of pipeline</span>` },
     { label: "Setups Completed", val: m.setupCompleted, icon: ICON.setup, accent: "#2f6db0", soft: "rgba(47,109,176,.14)", sub: `<span class="chip neu">${m.setupScheduled} scheduled</span>` },
-    { label: "Conversion Rate", val: fmtPct(m.conversionRate), icon: ICON.conv, accent: "var(--st-good)", soft: "rgba(12,163,90,.13)", sub: `<span class="chip pos">${m.won} closed won</span> <span class="chip neu">of ${m.total}</span>` },
+    { label: "Conversion Rate", val: fmtPct(m.conversionRate), icon: ICON.conv, accent: "var(--st-good)", soft: "rgba(12,163,90,.13)", sub: `<span class="chip pos">${m.won} won</span> <span class="chip neu">of ${m.total}</span>` },
     { label: "Avg Setup CSAT", val: m.avgCsat != null ? m.avgCsat.toFixed(1) : "—", unit: m.avgCsat != null ? "/5" : "", icon: ICON.star, accent: "var(--lm-orange)", soft: "rgba(247,99,0,.12)", sub: `<span class="chip neu">${m.csatCount} rated</span>` },
     { label: "MRR Added", val: fmtMoney(m.mrrTotal), icon: ICON.money, accent: "var(--lm-blue)", soft: "rgba(6,139,255,.12)", sub: `<span class="chip pos">${m.won} firm${m.won === 1 ? "" : "s"} won</span>` },
     { label: "Closed Lost", val: m.closedLost, icon: ICON.lost, accent: "var(--st-critical)", soft: "rgba(216,58,58,.12)", sub: `<span class="chip ${m.closedLost ? "neg" : "neu"}">${fmtPct(m.lostRate)} of pipeline</span>` },
@@ -258,7 +258,7 @@ function renderFunnel(m) {
     { name: "Demos Completed", count: m.demosCompleted, color: "var(--fn-2)" },
     { name: "Setups Scheduled", count: m.setupScheduled, color: "var(--fn-3)" },
     { name: "Setups Completed", count: m.setupCompleted, color: "var(--fn-4)" },
-    { name: "Closed Won", count: m.won, color: "var(--fn-5)" },
+    { name: "Won", count: m.won, color: "var(--fn-5)" },
   ];
   const top = Math.max(1, stages[0].count);
   const el = document.getElementById("funnel");
@@ -326,7 +326,7 @@ function renderReps(data) {
     dEl.innerHTML = demoReps.map((r) => repRow(r.name, r.count, max, r.count ? r.won / r.count : 0)).join("");
     dEl.querySelectorAll(".bl-row").forEach((row, i) => {
       const r = demoReps[i];
-      bindTip(row, `<div class="tt-t">${esc(r.name)}</div><div class="tt-r"><span>Demos owned</span><b>${r.count}</b></div><div class="tt-r"><span>Completed</span><b>${r.completed}</b></div><div class="tt-r"><span>Closed won</span><b>${r.won}</b></div><div class="tt-r"><span>Conversion</span><b>${fmtPct(r.count ? r.won / r.count : 0)}</b></div>`);
+      bindTip(row, `<div class="tt-t">${esc(r.name)}</div><div class="tt-r"><span>Demos owned</span><b>${r.count}</b></div><div class="tt-r"><span>Completed</span><b>${r.completed}</b></div><div class="tt-r"><span>Won</span><b>${r.won}</b></div><div class="tt-r"><span>Conversion</span><b>${fmtPct(r.count ? r.won / r.count : 0)}</b></div>`);
     });
   }
 
@@ -338,7 +338,7 @@ function renderReps(data) {
     sEl.querySelectorAll(".bl-row").forEach((row, i) => {
       const r = setupReps[i];
       const csat = r.avgCsat != null ? r.avgCsat.toFixed(1) + " / 5" : "—";
-      bindTip(row, `<div class="tt-t">${esc(r.name)}</div><div class="tt-r"><span>Setups owned</span><b>${r.count}</b></div><div class="tt-r"><span>Completed</span><b>${r.completed}</b></div><div class="tt-r"><span>Closed won</span><b>${r.won}</b></div><div class="tt-r"><span>Conversion</span><b>${fmtPct(r.count ? r.won / r.count : 0)}</b></div><div class="tt-r"><span>Avg CSAT</span><b>${csat}</b></div>`);
+      bindTip(row, `<div class="tt-t">${esc(r.name)}</div><div class="tt-r"><span>Setups owned</span><b>${r.count}</b></div><div class="tt-r"><span>Completed</span><b>${r.completed}</b></div><div class="tt-r"><span>Won</span><b>${r.won}</b></div><div class="tt-r"><span>Conversion</span><b>${fmtPct(r.count ? r.won / r.count : 0)}</b></div><div class="tt-r"><span>Avg CSAT</span><b>${csat}</b></div>`);
     });
   }
 }
@@ -657,7 +657,7 @@ function refreshCell(td, d, field) {
   });
 }
 
-const STATUS_SUGGEST = ["Scheduled", "Completed", "Rescheduled", "No Show", "Cancelled", "In Progress", "Not Started", "Closed Lost"];
+const STATUS_SUGGEST = ["Scheduled", "Completed", "Completed - Won", "Completed - Lost", "Rescheduled", "No Show", "Cancelled", "In Progress", "Not Started"];
 function ensureDatalist(id, values) {
   let dl = document.getElementById(id);
   if (!dl) { dl = document.createElement("datalist"); dl.id = id; document.body.appendChild(dl); }
@@ -915,18 +915,18 @@ function loadMock() {
   STATE.header = ["Firm Name","Firm ID","Demo Status","Demo Rep","Demo Date","Demo Rescheduled Date","Set up Status","Set up #1 date","Set up #2 date","Pre-set up requirements met?","Set up Rep","Set up CSAT","Closed lost reason","MRR increase"];
   STATE.cols = resolveColumns(STATE.header);
   const raw = [
-    ["VIP Law","2365","Closed Won","Justin","7/16/26","","Completed","7/17/26","7/20/26","TRUE","Rosa","5","","$150"],
+    ["VIP Law","2365","Completed - Won","Justin","7/16/26","","Completed","7/17/26","7/20/26","TRUE","Rosa","5","","$150"],
     ["Harbor & Vance","2410","Completed","Priya","7/14/26","","Completed","7/15/26","","TRUE","Rosa","4","","$220"],
     ["Cedar Legal","2410","Scheduled","Marcus","7/18/26","","Not Started","","","FALSE","","","","" ],
-    ["Alderman LLP","2501","Closed Lost","Priya","7/10/26","7/19/26","Not Started","","","FALSE","","","Price",""],
-    ["Brightwater Firm","2555","Closed Won","Justin","7/09/26","","Completed","7/11/26","7/13/26","TRUE","Dev","5","","$300"],
-    ["Pinnacle Counsel","2560","Closed Lost","Marcus","7/08/26","","Not Started","","","FALSE","","","Chose competitor",""],
+    ["Alderman LLP","2501","Completed - Lost","Priya","7/10/26","7/19/26","Not Started","","","FALSE","","","Price",""],
+    ["Brightwater Firm","2555","Completed - Won","Justin","7/09/26","","Completed","7/11/26","7/13/26","TRUE","Dev","5","","$300"],
+    ["Pinnacle Counsel","2560","Completed - Lost","Marcus","7/08/26","","Not Started","","","FALSE","","","Chose competitor",""],
   ];
   STATE.data = raw.map((r, i) => normalizeRow(r, i + 2));
   STATE.dupIds = computeDuplicates(STATE.data);
   // Stand-in for the sheet's real data-validation dropdowns (fetched live in prod).
   STATE.validations = {
-    demoStatus:  { type: "list", options: ["Scheduled", "Completed", "Rescheduled", "No Show", "Cancelled", "Closed Won", "Closed Lost"] },
+    demoStatus:  { type: "list", options: ["Scheduled", "Completed", "Completed - Won", "Completed - Lost", "Rescheduled", "No Show", "Cancelled"] },
     setupStatus: { type: "list", options: ["Not Started", "Scheduled", "In Progress", "Completed"] },
     csat:        { type: "list", options: ["1", "2", "3", "4", "5"] },
     preReq:      { type: "bool" },
