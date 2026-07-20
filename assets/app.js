@@ -410,6 +410,80 @@ function renderLostReasons(data) {
 }
 
 /* --------------------------------------------------------------------------
+   Onboardings over time — demos by outcome (Won / Lost / Open), by demo date
+   -------------------------------------------------------------------------- */
+function bucketKeyFor(date, mode) {
+  const d = new Date(date);
+  if (mode === "month") return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0");
+  const day = (d.getDay() + 6) % 7; d.setHours(0, 0, 0, 0); d.setDate(d.getDate() - day); // Monday
+  return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
+}
+function buildBuckets(min, max, mode) {
+  const out = [];
+  if (mode === "month") {
+    let y = min.getFullYear(), m = min.getMonth();
+    const ey = max.getFullYear(), em = max.getMonth();
+    while ((y < ey || (y === ey && m <= em)) && out.length < 36) {
+      const dt = new Date(y, m, 1);
+      out.push({ key: `${y}-${String(m + 1).padStart(2, "0")}`, label: dt.toLocaleString("en-US", { month: "short" }), tip: dt.toLocaleString("en-US", { month: "long", year: "numeric" }) });
+      if (++m > 11) { m = 0; y++; }
+    }
+  } else {
+    const d = new Date(min); const day = (d.getDay() + 6) % 7; d.setHours(0, 0, 0, 0); d.setDate(d.getDate() - day);
+    const end = new Date(max);
+    while (d <= end && out.length < 30) {
+      out.push({ key: `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`,
+        label: (d.getMonth() + 1) + "/" + d.getDate(),
+        tip: "Week of " + d.toLocaleString("en-US", { month: "short", day: "numeric" }) });
+      d.setDate(d.getDate() + 7);
+    }
+  }
+  return out;
+}
+function renderTrend(data) {
+  const el = document.getElementById("trend");
+  if (!el) return;
+  const note = document.getElementById("trendNote");
+  const items = [];
+  for (const d of data) {
+    const dt = parseDate(d.demoResched) || parseDate(d.demoDate);
+    if (dt) items.push({ dt, won: isWon(d), lost: isLost(d) });
+  }
+  if (!items.length) { el.innerHTML = `<div class="empty-note">No demo dates to chart yet.</div>`; if (note) note.textContent = ""; return; }
+
+  const min = new Date(Math.min(...items.map((i) => +i.dt)));
+  const max = new Date(Math.max(...items.map((i) => +i.dt)));
+  const mode = (max - min) / 86400000 > 112 ? "month" : "week";
+  const buckets = buildBuckets(min, max, mode);
+  const map = {};
+  buckets.forEach((b) => (map[b.key] = { won: 0, lost: 0, open: 0 }));
+  for (const it of items) {
+    const c = map[bucketKeyFor(it.dt, mode)];
+    if (!c) continue;
+    if (it.won) c.won++; else if (it.lost) c.lost++; else c.open++;
+  }
+  const totals = buckets.map((b) => map[b.key].won + map[b.key].lost + map[b.key].open);
+  const maxTotal = Math.max(1, ...totals);
+  const seg = (n, total, cls) => (n ? `<div class="tb-seg ${cls}" style="height:${(n / total) * 100}%"></div>` : "");
+
+  el.innerHTML =
+    `<div class="trend-plot">${buckets.map((b, i) => {
+      const c = map[b.key], total = totals[i];
+      return `<div class="tb-col" data-i="${i}">
+        ${total ? `<div class="tb-total">${total}</div>` : ""}
+        <div class="tb-stack" style="height:${total ? (total / maxTotal) * 100 : 0}%">${seg(c.lost, total, "lost")}${seg(c.open, total, "open")}${seg(c.won, total, "won")}</div>
+      </div>`;
+    }).join("")}</div>
+     <div class="trend-x">${buckets.map((b) => `<span class="tb-xlabel">${esc(b.label)}</span>`).join("")}</div>`;
+
+  if (note) note.textContent = mode === "month" ? "by month" : "by week";
+  el.querySelectorAll(".tb-col").forEach((col, i) => {
+    const b = buckets[i], c = map[b.key];
+    bindTip(col, `<div class="tt-t">${esc(b.tip)}</div><div class="tt-r"><span>Won</span><b>${c.won}</b></div><div class="tt-r"><span>Lost</span><b>${c.lost}</b></div><div class="tt-r"><span>Open</span><b>${c.open}</b></div><div class="tt-r"><span>Total demos</span><b>${totals[i]}</b></div>`);
+  });
+}
+
+/* --------------------------------------------------------------------------
    Needs Review (duplicate Firm IDs)
    -------------------------------------------------------------------------- */
 function renderNeedsReview() {
@@ -456,10 +530,52 @@ function renderNeedsReview() {
 let TABLE_STATE = { sortKey: "firmName", dir: 1, query: "" };
 let activeEditor = null;
 
+/* --------------------------------------------------------------------------
+   Dashboard-wide filter (rep + demo/setup status) — scopes every panel & table
+   -------------------------------------------------------------------------- */
+let FILTER = { rep: "", demoStatus: "", setupStatus: "" };
+function filterActive() { return !!(FILTER.rep || FILTER.demoStatus || FILTER.setupStatus); }
+function activeData() {
+  const { rep, demoStatus, setupStatus } = FILTER;
+  return STATE.data.filter((d) =>
+    (!rep || d.demoRep === rep || d.setupRep === rep) &&
+    (!demoStatus || d.demoStatus === demoStatus) &&
+    (!setupStatus || d.setupStatus === setupStatus));
+}
+function fillSelect(sel, options, allLabel) {
+  if (!sel) return;
+  const cur = sel.value;
+  sel.innerHTML = `<option value="">${allLabel}</option>` + options.map((o) => `<option value="${esc(o)}">${esc(o)}</option>`).join("");
+  sel.value = options.includes(cur) ? cur : "";
+}
+function populateFilters() {
+  const repSel = document.getElementById("fltRep");
+  if (!repSel) return;
+  const reps = new Set();
+  STATE.data.forEach((d) => { if (d.demoRep) reps.add(d.demoRep); if (d.setupRep) reps.add(d.setupRep); });
+  fillSelect(repSel, [...reps].sort(), "All reps");
+  fillSelect(document.getElementById("fltDemo"), distinctValues("demoStatus"), "All demo statuses");
+  fillSelect(document.getElementById("fltSetup"), distinctValues("setupStatus"), "All setup statuses");
+  FILTER = { rep: repSel.value, demoStatus: document.getElementById("fltDemo").value, setupStatus: document.getElementById("fltSetup").value };
+}
+function onFilterChange() {
+  FILTER.rep = document.getElementById("fltRep").value;
+  FILTER.demoStatus = document.getElementById("fltDemo").value;
+  FILTER.setupStatus = document.getElementById("fltSetup").value;
+  renderDerived();
+  renderTable();
+}
+function clearFilters() {
+  ["fltRep", "fltDemo", "fltSetup"].forEach((id) => { const s = document.getElementById(id); if (s) s.value = ""; });
+  FILTER = { rep: "", demoStatus: "", setupStatus: "" };
+  renderDerived();
+  renderTable();
+}
+
 function renderTable() {
   const { sortKey, dir, query } = TABLE_STATE;
   const q = query.trim().toLowerCase();
-  let rows = STATE.data.filter((d) => !q ||
+  let rows = activeData().filter((d) => !q ||
     [d.firmName, d.firmId, d.demoRep, d.setupRep, d.demoStatus, d.setupStatus, d.closedLost].some((v) => (v || "").toLowerCase().includes(q)));
   rows = rows.slice().sort((a, b) => {
     let av = a[sortKey], bv = b[sortKey];
@@ -719,16 +835,22 @@ function ensureDatalist(id, values) {
    Derived re-render (everything except rebuilding the whole table)
    -------------------------------------------------------------------------- */
 function renderDerived() {
-  const m = computeMetrics(STATE.data);
+  const data = activeData();
+  const m = computeMetrics(data);
   renderKPIs(m); renderFunnel(m); renderCsat(m);
-  renderDistribution("demoDist", distribution(STATE.data, "demoStatus"));
-  renderDistribution("setupDist", distribution(STATE.data, "setupStatus"));
-  renderLostReasons(STATE.data);
-  renderReps(STATE.data);
-  renderNeedsReview();
-  document.getElementById("firmTotal").textContent = m.total;
+  renderDistribution("demoDist", distribution(data, "demoStatus"));
+  renderDistribution("setupDist", distribution(data, "setupStatus"));
+  renderLostReasons(data);
+  renderReps(data);
+  renderTrend(data);
+  renderNeedsReview();                                   // always across the full sheet
+  document.getElementById("firmTotal").textContent = STATE.data.length;
+  const cnt = document.getElementById("fltCount");
+  if (cnt) cnt.textContent = filterActive() ? `Showing ${data.length} of ${STATE.data.length}` : `${STATE.data.length} firms`;
+  const clr = document.getElementById("fltClear");
+  if (clr) clr.classList.toggle("hidden", !filterActive());
 }
-function renderAll() { renderDerived(); renderTable(); stampUpdated(); }
+function renderAll() { populateFilters(); renderDerived(); renderTable(); stampUpdated(); }
 function stampUpdated() {
   document.getElementById("updated").textContent = new Date().toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
 }
@@ -1007,6 +1129,8 @@ function boot() {
   document.getElementById("refreshBtn").addEventListener("click", () => refresh());
   document.getElementById("search").addEventListener("input", (e) => { TABLE_STATE.query = e.target.value; renderTable(); });
   document.getElementById("reviewJump").addEventListener("click", () => document.getElementById("reviewSection").scrollIntoView({ behavior: "smooth", block: "start" }));
+  ["fltRep", "fltDemo", "fltSetup"].forEach((id) => { const s = document.getElementById(id); if (s) s.addEventListener("change", onFilterChange); });
+  const clr = document.getElementById("fltClear"); if (clr) clr.addEventListener("click", clearFilters);
 
   if (MOCK) { signIn(); return; }              // mock bypasses auth
   if (!CONFIG.CLIENT_ID) { showGate("config"); return; }

@@ -142,6 +142,46 @@ body { overflow-x: clip; }
 .meta-line b { color: var(--text-1); font-weight: 650; }
 
 /* ============================ SECTION ================================== */
+/* ============================ FILTER BAR ============================== */
+.filter-bar {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  margin-top: 20px; padding: 12px 16px;
+  background: var(--surface-1); border: 1px solid var(--border);
+  border-radius: var(--radius); box-shadow: var(--shadow-sm);
+}
+.fb-label { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; font-weight: 700; color: var(--text-2); }
+.fb-label svg { width: 15px; height: 15px; }
+.fb-select {
+  font: inherit; font-size: 13px; color: var(--text-1); cursor: pointer;
+  background: var(--surface-2); border: 1px solid var(--border); border-radius: 8px;
+  padding: 7px 10px; max-width: 210px;
+}
+.fb-select:hover { border-color: var(--border-str); }
+.fb-select:focus { outline: 2px solid var(--lm-blue); outline-offset: 1px; }
+.fb-count { font-size: 12.5px; color: var(--text-2); font-weight: 600; margin-left: auto; }
+.fb-clear {
+  font: inherit; font-size: 12.5px; font-weight: 600; cursor: pointer;
+  background: rgba(6,139,255,.1); color: var(--lm-blue); border: 1px solid rgba(6,139,255,.3);
+  padding: 6px 12px; border-radius: 999px;
+}
+.fb-clear:hover { background: rgba(6,139,255,.18); }
+
+/* ============================ TREND CHART ============================= */
+.trend-legend { display: flex; gap: 14px; align-items: center; }
+.tl-item { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text-2); font-weight: 600; }
+.tl-sw { width: 11px; height: 11px; border-radius: 3px; }
+.trend-plot { display: flex; align-items: flex-end; gap: 8px; height: 190px; padding-top: 18px; }
+.tb-col { flex: 1 1 0; height: 100%; display: flex; flex-direction: column; justify-content: flex-end; align-items: center; position: relative; min-width: 0; }
+.tb-col:hover .tb-stack { filter: brightness(1.06); }
+.tb-total { position: absolute; top: 0; font-size: 11px; font-weight: 700; color: var(--text-2); font-variant-numeric: tabular-nums; }
+.tb-stack { width: 74%; max-width: 42px; min-height: 2px; display: flex; flex-direction: column; gap: 1.5px; border-radius: 5px 5px 0 0; overflow: hidden; transition: filter .12s; }
+.tb-seg { width: 100%; }
+.tb-seg.won { background: var(--st-good); }
+.tb-seg.open { background: var(--fn-2); }
+.tb-seg.lost { background: var(--st-critical); }
+.trend-x { display: flex; gap: 8px; margin-top: 8px; }
+.tb-xlabel { flex: 1 1 0; text-align: center; font-size: 10.5px; color: var(--text-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-variant-numeric: tabular-nums; }
+
 .section { margin-top: 30px; }
 .section-head { display: flex; align-items: baseline; gap: 10px; margin-bottom: 14px; }
 .section-head h2 { font-size: 14px; font-weight: 750; letter-spacing: .02em; text-transform: uppercase; color: var(--text-2); }

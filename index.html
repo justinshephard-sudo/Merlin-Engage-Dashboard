@@ -63,6 +63,16 @@
 
   <!-- ============================ APP ============================ -->
   <main class="wrap hidden" id="app">
+    <!-- Filter bar -->
+    <div class="filter-bar" id="filterBar">
+      <span class="fb-label"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 3H2l8 9.5V19l4 2v-8.5z"/></svg> Filter</span>
+      <select id="fltRep" class="fb-select"><option value="">All reps</option></select>
+      <select id="fltDemo" class="fb-select"><option value="">All demo statuses</option></select>
+      <select id="fltSetup" class="fb-select"><option value="">All setup statuses</option></select>
+      <span class="fb-count" id="fltCount"></span>
+      <button class="fb-clear hidden" id="fltClear">Clear ✕</button>
+    </div>
+
     <!-- KPI tiles -->
     <section class="section"><div class="kpi-grid" id="kpis"></div></section>
 
@@ -84,6 +94,22 @@
           <div class="panel-head"><div><div class="panel-title">Setup Satisfaction</div><div class="panel-sub">Average CSAT after setup</div></div></div>
           <div id="csat"></div>
         </div>
+      </div>
+    </section>
+
+    <!-- Onboardings over time -->
+    <section class="section">
+      <div class="section-head"><h2>Onboardings Over Time</h2><span class="rule"></span><span class="edit-note" id="trendNote"></span></div>
+      <div class="panel">
+        <div class="panel-head">
+          <div><div class="panel-title">Demos by outcome</div><div class="panel-sub">Grouped by demo date</div></div>
+          <div class="trend-legend">
+            <span class="tl-item"><span class="tl-sw" style="background:var(--st-good)"></span>Won</span>
+            <span class="tl-item"><span class="tl-sw" style="background:var(--fn-2)"></span>Open</span>
+            <span class="tl-item"><span class="tl-sw" style="background:var(--st-critical)"></span>Lost</span>
+          </div>
+        </div>
+        <div id="trend"></div>
       </div>
     </section>
 
