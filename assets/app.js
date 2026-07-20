@@ -334,31 +334,50 @@ function renderCsat(m) {
   </div></div>`;
 }
 
+// Onboarding cycle: demo scheduled date (rescheduled date if present) -> Set up #2 date,
+// counted only for firms whose Setup Status is Completed. Returns {avg, n} or null.
+function cycleDays(rows) {
+  const gs = [];
+  for (const r of rows) {
+    if (!isCompleted(r.setupStatus)) continue;
+    const start = parseDate(r.demoResched) || parseDate(r.demoDate);
+    const end = parseDate(r.setup2Date);
+    if (start && end) { const d = (end - start) / 86400000; if (d >= 0 && d < 400) gs.push(d); }
+  }
+  return gs.length ? { avg: gs.reduce((a, b) => a + b, 0) / gs.length, n: gs.length } : null;
+}
+
 function renderReps(data) {
   const demoReps = groupBy(data.filter((d) => d.demoRep), (d) => d.demoRep, {
     completed: (rows) => rows.filter(isDemoDone).length,
     won: (rows) => rows.filter(isWon).length,
+    cycle: cycleDays,
   }).sort((a, b) => b.count - a.count);
   const setupReps = groupBy(data.filter((d) => d.setupRep), (d) => d.setupRep, {
     completed: (rows) => rows.filter((r) => isCompleted(r.setupStatus)).length,
     won: (rows) => rows.filter(isWon).length,
+    cycle: cycleDays,
     avgCsat: (rows) => { const c = rows.map((r) => r.csat).filter((n) => n != null); return c.length ? c.reduce((a, b) => a + b, 0) / c.length : null; },
   }).sort((a, b) => b.count - a.count);
 
-  // Bar length = volume (count); the headline value = conversion rate.
-  const repRow = (name, count, max, conv) =>
+  // Bar length = volume (count); headline values = conversion rate + avg cycle days.
+  const repRow = (name, count, max, conv, cycle) =>
     `<div class="bl-row"><span class="bl-label">${esc(name)}</span>
      <span class="bl-track"><span class="bl-bar" style="width:${Math.max(3, (count / max) * 100)}%;background:var(--lm-blue)"></span></span>
-     <span class="bl-val">${fmtPct(conv)}<span class="bl-pct">conv</span></span></div>`;
+     <span class="bl-val">${fmtPct(conv)}<span class="bl-pct">conv</span> · ${cycle ? fmtDays(cycle.avg) : "—"}<span class="bl-pct">d</span></span></div>`;
+
+  const cycleTip = (c) => c
+    ? `<div class="tt-r"><span>Cycle demo→setup #2</span><b>${fmtDays(c.avg)} days</b></div><div class="tt-r"><span>&nbsp;based on</span><b>${c.n} completed</b></div>`
+    : `<div class="tt-r"><span>Cycle demo→setup #2</span><b>—</b></div>`;
 
   const dEl = document.getElementById("demoReps");
   if (!demoReps.length) dEl.innerHTML = `<div class="empty-note">No demo reps yet.</div>`;
   else {
     const max = Math.max(...demoReps.map((r) => r.count));
-    dEl.innerHTML = demoReps.map((r) => repRow(r.name, r.count, max, r.count ? r.won / r.count : 0)).join("");
+    dEl.innerHTML = demoReps.map((r) => repRow(r.name, r.count, max, r.count ? r.won / r.count : 0, r.cycle)).join("");
     dEl.querySelectorAll(".bl-row").forEach((row, i) => {
       const r = demoReps[i];
-      bindTip(row, `<div class="tt-t">${esc(r.name)}</div><div class="tt-r"><span>Demos owned</span><b>${r.count}</b></div><div class="tt-r"><span>Completed</span><b>${r.completed}</b></div><div class="tt-r"><span>Won</span><b>${r.won}</b></div><div class="tt-r"><span>Conversion</span><b>${fmtPct(r.count ? r.won / r.count : 0)}</b></div>`);
+      bindTip(row, `<div class="tt-t">${esc(r.name)}</div><div class="tt-r"><span>Demos owned</span><b>${r.count}</b></div><div class="tt-r"><span>Completed</span><b>${r.completed}</b></div><div class="tt-r"><span>Won</span><b>${r.won}</b></div><div class="tt-r"><span>Conversion</span><b>${fmtPct(r.count ? r.won / r.count : 0)}</b></div>${cycleTip(r.cycle)}`);
     });
   }
 
@@ -366,11 +385,11 @@ function renderReps(data) {
   if (!setupReps.length) sEl.innerHTML = `<div class="empty-note">No setup reps yet.</div>`;
   else {
     const max = Math.max(...setupReps.map((r) => r.count));
-    sEl.innerHTML = setupReps.map((r) => repRow(r.name, r.count, max, r.count ? r.won / r.count : 0)).join("");
+    sEl.innerHTML = setupReps.map((r) => repRow(r.name, r.count, max, r.count ? r.won / r.count : 0, r.cycle)).join("");
     sEl.querySelectorAll(".bl-row").forEach((row, i) => {
       const r = setupReps[i];
       const csat = r.avgCsat != null ? r.avgCsat.toFixed(1) + " / 5" : "—";
-      bindTip(row, `<div class="tt-t">${esc(r.name)}</div><div class="tt-r"><span>Setups owned</span><b>${r.count}</b></div><div class="tt-r"><span>Completed</span><b>${r.completed}</b></div><div class="tt-r"><span>Won</span><b>${r.won}</b></div><div class="tt-r"><span>Conversion</span><b>${fmtPct(r.count ? r.won / r.count : 0)}</b></div><div class="tt-r"><span>Avg CSAT</span><b>${csat}</b></div>`);
+      bindTip(row, `<div class="tt-t">${esc(r.name)}</div><div class="tt-r"><span>Setups owned</span><b>${r.count}</b></div><div class="tt-r"><span>Completed</span><b>${r.completed}</b></div><div class="tt-r"><span>Won</span><b>${r.won}</b></div><div class="tt-r"><span>Conversion</span><b>${fmtPct(r.count ? r.won / r.count : 0)}</b></div>${cycleTip(r.cycle)}<div class="tt-r"><span>Avg CSAT</span><b>${csat}</b></div>`);
     });
   }
 }
