@@ -156,9 +156,23 @@ function computeMetrics(data) {
   const avgCsat = csats.length ? csats.reduce((a, b) => a + b, 0) / csats.length : null;
   const mrrTotal = data.reduce((a, d) => a + (d.mrr || 0), 0);
   const preReqMet = data.filter((d) => d.preReq === true).length;
+
+  // Onboardings closed = Completed - Won AND setup completed.
+  const onboardingsClosed = data.filter((d) => isWon(d) && isCompleted(d.setupStatus)).length;
+
+  // Avg days from demo completed (rescheduled date if present, else demo date) to first setup date.
+  const gaps = [];
+  for (const d of data) {
+    const dc = parseDate(d.demoResched) || parseDate(d.demoDate);
+    const su = parseDate(d.setup1Date);
+    if (dc && su) { const days = (su - dc) / 86400000; if (days >= 0 && days < 400) gaps.push(days); }
+  }
+  const avgDemoToSetup = gaps.length ? gaps.reduce((a, b) => a + b, 0) / gaps.length : null;
+
   return {
     total, demosCompleted, setupScheduled, setupCompleted, won, closedLost,
     avgCsat, csatCount: csats.length, mrrTotal, preReqMet,
+    onboardingsClosed, avgDemoToSetup, demoToSetupCount: gaps.length,
     conversionRate: total ? won / total : 0,
     demoRate: total ? demosCompleted / total : 0,
     setupRate: demosCompleted ? setupCompleted / demosCompleted : 0,
@@ -197,6 +211,22 @@ function distinctValues(field) {
    -------------------------------------------------------------------------- */
 const fmtMoney = (n) => "$" + Math.round(n || 0).toLocaleString("en-US");
 const fmtPct = (n) => (n * 100).toFixed(n >= 0.1 || n === 0 ? 0 : 1) + "%";
+
+/* Parse sheet dates: M/D/YY, M/D/YYYY, or M/D (assumes current year). */
+function parseDate(s) {
+  if (!s) return null;
+  s = String(s).trim();
+  const m = s.match(/^(\d{1,2})[\/\-.](\d{1,2})(?:[\/\-.](\d{2,4}))?$/);
+  if (m) {
+    const mo = +m[1], da = +m[2];
+    const year = m[3] == null ? new Date().getFullYear() : (m[3].length <= 2 ? 2000 + +m[3] : +m[3]);
+    const d = new Date(year, mo - 1, da);
+    return isNaN(d.getTime()) ? null : d;
+  }
+  const d = new Date(s);
+  return isNaN(d.getTime()) ? null : d;
+}
+const fmtDays = (n) => n == null ? "—" : (n < 10 ? n.toFixed(1) : Math.round(n).toString());
 
 /* --------------------------------------------------------------------------
    Tooltip
@@ -240,6 +270,8 @@ function renderKPIs(m) {
     { label: "Demos Completed", val: m.demosCompleted, icon: ICON.demo, accent: "var(--lm-cyan)", soft: "rgba(3,176,219,.12)", sub: `<span class="chip ${m.demoRate >= 0.5 ? "pos" : "neu"}">${fmtPct(m.demoRate)} of pipeline</span>` },
     { label: "Setups Completed", val: m.setupCompleted, icon: ICON.setup, accent: "#2f6db0", soft: "rgba(47,109,176,.14)", sub: `<span class="chip neu">${m.setupScheduled} scheduled</span>` },
     { label: "Conversion Rate", val: fmtPct(m.conversionRate), icon: ICON.conv, accent: "var(--st-good)", soft: "rgba(12,163,90,.13)", sub: `<span class="chip pos">${m.won} won</span> <span class="chip neu">of ${m.total}</span>` },
+    { label: "Onboardings Closed", val: m.onboardingsClosed, icon: ICON.won, accent: "var(--st-good)", soft: "rgba(12,163,90,.13)", sub: `<span class="chip pos">won &amp; setup complete</span>` },
+    { label: "Avg Demo → Setup", val: m.avgDemoToSetup != null ? fmtDays(m.avgDemoToSetup) : "—", unit: m.avgDemoToSetup != null ? " days" : "", icon: ICON.setup, accent: "var(--lm-cyan)", soft: "rgba(3,176,219,.12)", sub: `<span class="chip neu">${m.demoToSetupCount} measured</span>` },
     { label: "Avg Setup CSAT", val: m.avgCsat != null ? m.avgCsat.toFixed(1) : "—", unit: m.avgCsat != null ? "/5" : "", icon: ICON.star, accent: "var(--lm-orange)", soft: "rgba(247,99,0,.12)", sub: `<span class="chip neu">${m.csatCount} rated</span>` },
     { label: "MRR Added", val: fmtMoney(m.mrrTotal), icon: ICON.money, accent: "var(--lm-blue)", soft: "rgba(6,139,255,.12)", sub: `<span class="chip pos">${m.won} firm${m.won === 1 ? "" : "s"} won</span>` },
     { label: "Closed Lost", val: m.closedLost, icon: ICON.lost, accent: "var(--st-critical)", soft: "rgba(216,58,58,.12)", sub: `<span class="chip ${m.closedLost ? "neg" : "neu"}">${fmtPct(m.lostRate)} of pipeline</span>` },
