@@ -182,6 +182,23 @@ body { overflow-x: clip; }
 .trend-x { display: flex; gap: 8px; margin-top: 8px; }
 .tb-xlabel { flex: 1 1 0; text-align: center; font-size: 10.5px; color: var(--text-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-variant-numeric: tabular-nums; }
 
+/* ============================ NEEDS ATTENTION ======================== */
+.attn-count { font-size: 12px; font-weight: 700; color: #fff; background: var(--st-serious); padding: 1px 9px; border-radius: 999px; line-height: 1.7; }
+.attn-count:empty { display: none; }
+.attn-list { display: flex; flex-direction: column; }
+.attn-row { display: grid; grid-template-columns: 150px minmax(120px, 1.1fr) minmax(160px, 1.7fr) auto auto; align-items: center; gap: 14px; padding: 11px 4px; border-bottom: 1px solid var(--border); }
+.attn-row:last-child { border-bottom: none; }
+.attn-firm { font-weight: 700; color: var(--text-1); font-size: 13.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.attn-action { font-size: 13px; color: var(--text-2); }
+.attn-rep { font-size: 12.5px; color: var(--text-3); text-align: right; white-space: nowrap; }
+.attn-clear { text-align: center; padding: 22px; color: var(--st-good); font-weight: 650; font-size: 13.5px; }
+@media (max-width: 760px) {
+  .attn-row { grid-template-columns: 1fr auto; row-gap: 4px; }
+  .attn-row .pill { grid-column: 1; }
+  .attn-row .rr-jump { grid-row: 1 / span 2; grid-column: 2; }
+  .attn-rep { text-align: left; }
+}
+
 .section { margin-top: 30px; }
 .section-head { display: flex; align-items: baseline; gap: 10px; margin-bottom: 14px; }
 .section-head h2 { font-size: 14px; font-weight: 750; letter-spacing: .02em; text-transform: uppercase; color: var(--text-2); }

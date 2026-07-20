@@ -484,6 +484,71 @@ function renderTrend(data) {
 }
 
 /* --------------------------------------------------------------------------
+   Needs Attention — next-action queue mapped to the onboarding flow.
+   Each firm shows once, with its earliest-stage blocker (priority order).
+   -------------------------------------------------------------------------- */
+function computeAttention(data) {
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const past = (s) => { const d = parseDate(s); return d && d < today; };
+  const has = (v) => v != null && String(v).trim() !== "";
+  const out = [];
+  for (const d of data) {
+    const demoRep = d.demoRep || "Unassigned";
+    const setupRep = d.setupRep || d.demoRep || "Unassigned";
+
+    if (isScheduled(d.demoStatus) && (!has(d.firmId) || !has(d.demoDate))) {
+      const need = !has(d.firmId) && !has(d.demoDate) ? "Add Firm ID & demo date" : !has(d.firmId) ? "Add Firm ID" : "Add demo date";
+      out.push({ d, cls: "info", tag: "Missing info", action: need, rep: demoRep }); continue;
+    }
+    if (isScheduled(d.demoStatus) && !isDemoDone(d) && past(d.demoResched || d.demoDate)) {
+      out.push({ d, cls: "warn", tag: "Demo overdue", action: "Demo date passed — set Won / Lost", rep: demoRep }); continue;
+    }
+    if (isLost(d) && !has(d.closedLost)) {
+      out.push({ d, cls: "serious", tag: "No lost reason", action: "Add a closed-lost reason", rep: demoRep }); continue;
+    }
+    if (isWon(d) && !isScheduled(d.setupStatus) && !isCompleted(d.setupStatus) && !has(d.setup1Date)) {
+      out.push({ d, cls: "serious", tag: "Setup not booked", action: "Schedule setup & set status", rep: demoRep }); continue;
+    }
+    if (isScheduled(d.setupStatus) && !isCompleted(d.setupStatus) && past(d.setup1Date)) {
+      out.push({ d, cls: "warn", tag: "Setup #1 overdue", action: "Setup #1 date passed — update status", rep: setupRep }); continue;
+    }
+    if (!isCompleted(d.setupStatus) && has(d.setup1Date) && past(d.setup1Date) && !has(d.setup2Date)) {
+      out.push({ d, cls: "info", tag: "No setup #2", action: "Schedule the Setup #2 call", rep: setupRep }); continue;
+    }
+  }
+  return out;
+}
+
+function jumpToRow(row) {
+  TABLE_STATE.query = "";
+  const s = document.getElementById("search"); if (s) s.value = "";
+  renderTable();
+  const tr = document.querySelector(`tbody tr[data-row="${row}"]`);
+  if (tr) { tr.scrollIntoView({ block: "center", behavior: "smooth" }); tr.classList.add("row-flash"); setTimeout(() => tr.classList.remove("row-flash"), 1600); }
+}
+
+function renderAttention(data) {
+  const list = document.getElementById("attnList");
+  const count = document.getElementById("attnCount");
+  if (!list) return;
+  const items = computeAttention(data);
+  if (count) count.textContent = items.length ? String(items.length) : "";
+  if (!items.length) {
+    list.innerHTML = `<div class="attn-clear">✓ All caught up — nothing needs attention${filterActive() ? " in this view" : ""}.</div>`;
+    return;
+  }
+  list.innerHTML = items.map((it) => `
+    <div class="attn-row">
+      <span class="pill ${it.cls}"><span class="pd"></span>${esc(it.tag)}</span>
+      <span class="attn-firm">${esc(it.d.firmName)}</span>
+      <span class="attn-action">${esc(it.action)}</span>
+      <span class="attn-rep">${esc(it.rep)}</span>
+      <button class="rr-jump" data-row="${it.d._row}">Open →</button>
+    </div>`).join("");
+  list.querySelectorAll(".rr-jump").forEach((b) => b.addEventListener("click", () => jumpToRow(b.dataset.row)));
+}
+
+/* --------------------------------------------------------------------------
    Needs Review (duplicate Firm IDs)
    -------------------------------------------------------------------------- */
 function renderNeedsReview() {
@@ -843,6 +908,7 @@ function renderDerived() {
   renderLostReasons(data);
   renderReps(data);
   renderTrend(data);
+  renderAttention(data);
   renderNeedsReview();                                   // always across the full sheet
   document.getElementById("firmTotal").textContent = STATE.data.length;
   const cnt = document.getElementById("fltCount");
