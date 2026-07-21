@@ -715,7 +715,6 @@ function beginEdit(td) {
   if (activeEditor) cancelEdit();
   const row = +td.dataset.row, field = td.dataset.field, type = td.dataset.type;
   const d = STATE.data.find((x) => x._row === row);
-  window.__beginEdit = { row, field, type, foundD: !!d, value: d ? d[field] : undefined };
   if (!d) return;
 
   const options = choiceOptions(field, type);
@@ -796,7 +795,6 @@ function openDropdown(td, d, field, type, options) {
   positionDropdown(pop, td);
 
   ddState = { pop, td, d, field, type, t: performance.now() };
-  window.__ddDebug = { field, foundD: !!d, options: (options || []).length, rect: pop.getBoundingClientRect(), z: getComputedStyle(pop).zIndex, opacity: getComputedStyle(pop).opacity };
   pop.querySelectorAll(".dd-item").forEach((btn) => btn.addEventListener("click", (e) => {
     e.stopPropagation();
     const ctx = ddState, v = btn.dataset.v;
