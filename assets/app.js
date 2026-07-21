@@ -53,11 +53,13 @@ const FIELD_MATCHERS = {
   setupStatus: (h) => (h.includes("set up") || h.includes("setup")) && h.includes("status"),
   setup1Date:  (h) => h.includes("#1"),
   setup2Date:  (h) => h.includes("#2"),
+  setupClosed: (h) => h.includes("closed") && h.includes("date"),   // "Set up closed date"
   preReq:      (h) => h.includes("requirement"),
   setupRep:    (h) => (h.includes("set up") || h.includes("setup")) && h.includes("rep"),
   csat:        (h) => h.includes("csat"),
   closedLost:  (h) => h.includes("closed lost"),
   mrr:         (h) => h.includes("mrr"),
+  createdAt:   (h) => h.includes("created"),
 };
 
 function resolveColumns(headerRow) {
@@ -71,6 +73,7 @@ function resolveColumns(headerRow) {
 const TABLE_COLS = [
   { field: "firmName",    label: "Firm",               type: "text",   cls: "firm" },
   { field: "firmId",      label: "ID",                 type: "text" },
+  { field: "createdAt",   label: "Created",            type: "text" },
   { field: "demoStatus",  label: "Demo",               type: "status" },
   { field: "demoRep",     label: "Demo Rep",           type: "rep" },
   { field: "demoDate",    label: "Demo Date",          type: "text" },
@@ -78,6 +81,7 @@ const TABLE_COLS = [
   { field: "setupStatus", label: "Setup",              type: "status" },
   { field: "setup1Date",  label: "Setup #1",           type: "text" },
   { field: "setup2Date",  label: "Setup #2",           type: "text" },
+  { field: "setupClosed", label: "Setup Closed",       type: "text" },
   { field: "preReq",      label: "Pre-reqs",           type: "bool" },
   { field: "setupRep",    label: "Setup Rep",          type: "rep" },
   { field: "csat",        label: "CSAT",               type: "num" },
@@ -127,11 +131,13 @@ function normalizeRow(r, rowNumber) {
     setupStatus: cell(r, c.setupStatus),
     setup1Date: cell(r, c.setup1Date),
     setup2Date: cell(r, c.setup2Date),
+    setupClosed: cell(r, c.setupClosed),
     preReq: toBool(cell(r, c.preReq)),
     setupRep: cell(r, c.setupRep),
     csat: toNumber(cell(r, c.csat)),
     closedLost: cell(r, c.closedLost),
     mrr: toNumber(cell(r, c.mrr)),
+    createdAt: cell(r, c.createdAt),
   };
 }
 
@@ -160,19 +166,19 @@ function computeMetrics(data) {
   // Onboardings closed = Completed - Won AND setup completed.
   const onboardingsClosed = data.filter((d) => isWon(d) && isCompleted(d.setupStatus)).length;
 
-  // Avg days from demo completed (rescheduled date if present, else demo date) to first setup date.
+  // Avg days from demo (rescheduled date if present, else demo date) to Set up closed date.
   const gaps = [];
   for (const d of data) {
     const dc = parseDate(d.demoResched) || parseDate(d.demoDate);
-    const su = parseDate(d.setup1Date);
+    const su = parseDate(d.setupClosed);
     if (dc && su) { const days = (su - dc) / 86400000; if (days >= 0 && days < 400) gaps.push(days); }
   }
-  const avgDemoToSetup = gaps.length ? gaps.reduce((a, b) => a + b, 0) / gaps.length : null;
+  const avgDemoToClose = gaps.length ? gaps.reduce((a, b) => a + b, 0) / gaps.length : null;
 
   return {
     total, demosCompleted, setupScheduled, setupCompleted, won, closedLost,
     avgCsat, csatCount: csats.length, mrrTotal, preReqMet,
-    onboardingsClosed, avgDemoToSetup, demoToSetupCount: gaps.length,
+    onboardingsClosed, avgDemoToClose, demoToCloseCount: gaps.length,
     conversionRate: total ? won / total : 0,
     demoRate: total ? demosCompleted / total : 0,
     setupRate: demosCompleted ? setupCompleted / demosCompleted : 0,
@@ -271,7 +277,7 @@ function renderKPIs(m) {
     { label: "Setups Completed", val: m.setupCompleted, icon: ICON.setup, accent: "#2f6db0", soft: "rgba(47,109,176,.14)", sub: `<span class="chip neu">${m.setupScheduled} scheduled</span>` },
     { label: "Conversion Rate", val: fmtPct(m.conversionRate), icon: ICON.conv, accent: "var(--st-good)", soft: "rgba(12,163,90,.13)", sub: `<span class="chip pos">${m.won} won</span> <span class="chip neu">of ${m.total}</span>` },
     { label: "Onboardings Closed", val: m.onboardingsClosed, icon: ICON.won, accent: "var(--st-good)", soft: "rgba(12,163,90,.13)", sub: `<span class="chip pos">won &amp; setup complete</span>` },
-    { label: "Avg Demo → Setup", val: m.avgDemoToSetup != null ? fmtDays(m.avgDemoToSetup) : "—", unit: m.avgDemoToSetup != null ? " days" : "", icon: ICON.setup, accent: "var(--lm-cyan)", soft: "rgba(3,176,219,.12)", sub: `<span class="chip neu">${m.demoToSetupCount} measured</span>` },
+    { label: "Avg Demo → Close", val: m.avgDemoToClose != null ? fmtDays(m.avgDemoToClose) : "—", unit: m.avgDemoToClose != null ? " days" : "", icon: ICON.setup, accent: "var(--lm-cyan)", soft: "rgba(3,176,219,.12)", sub: `<span class="chip neu">${m.demoToCloseCount} measured</span>` },
     { label: "Avg Setup CSAT", val: m.avgCsat != null ? m.avgCsat.toFixed(1) : "—", unit: m.avgCsat != null ? "/5" : "", icon: ICON.star, accent: "var(--lm-orange)", soft: "rgba(247,99,0,.12)", sub: `<span class="chip neu">${m.csatCount} rated</span>` },
     { label: "MRR Added", val: fmtMoney(m.mrrTotal), icon: ICON.money, accent: "var(--lm-blue)", soft: "rgba(6,139,255,.12)", sub: `<span class="chip pos">${m.won} firm${m.won === 1 ? "" : "s"} won</span>` },
     { label: "Closed Lost", val: m.closedLost, icon: ICON.lost, accent: "var(--st-critical)", soft: "rgba(216,58,58,.12)", sub: `<span class="chip ${m.closedLost ? "neg" : "neu"}">${fmtPct(m.lostRate)} of pipeline</span>` },
@@ -334,14 +340,13 @@ function renderCsat(m) {
   </div></div>`;
 }
 
-// Onboarding cycle: demo scheduled date (rescheduled date if present) -> Set up #2 date,
-// counted only for firms whose Setup Status is Completed. Returns {avg, n} or null.
+// Onboarding cycle: demo date (rescheduled date if present) -> Set up closed date.
+// A firm counts once it has a Set up closed date. Returns {avg, n} or null.
 function cycleDays(rows) {
   const gs = [];
   for (const r of rows) {
-    if (!isCompleted(r.setupStatus)) continue;
     const start = parseDate(r.demoResched) || parseDate(r.demoDate);
-    const end = parseDate(r.setup2Date);
+    const end = parseDate(r.setupClosed);
     if (start && end) { const d = (end - start) / 86400000; if (d >= 0 && d < 400) gs.push(d); }
   }
   return gs.length ? { avg: gs.reduce((a, b) => a + b, 0) / gs.length, n: gs.length } : null;
@@ -367,8 +372,8 @@ function renderReps(data) {
      <span class="bl-val">${fmtPct(conv)}<span class="bl-pct">conv</span> · ${cycle ? fmtDays(cycle.avg) : "—"}<span class="bl-pct">d</span></span></div>`;
 
   const cycleTip = (c) => c
-    ? `<div class="tt-r"><span>Cycle demo→setup #2</span><b>${fmtDays(c.avg)} days</b></div><div class="tt-r"><span>&nbsp;based on</span><b>${c.n} completed</b></div>`
-    : `<div class="tt-r"><span>Cycle demo→setup #2</span><b>—</b></div>`;
+    ? `<div class="tt-r"><span>Cycle demo→close</span><b>${fmtDays(c.avg)} days</b></div><div class="tt-r"><span>&nbsp;based on</span><b>${c.n} closed</b></div>`
+    : `<div class="tt-r"><span>Cycle demo→close</span><b>—</b></div>`;
 
   const dEl = document.getElementById("demoReps");
   if (!demoReps.length) dEl.innerHTML = `<div class="empty-note">No demo reps yet.</div>`;
@@ -1151,15 +1156,15 @@ function setBadge(cls, text) {
    -------------------------------------------------------------------------- */
 function loadMock() {
   STATE.sheetTitle = "Sheet1";
-  STATE.header = ["Firm Name","Firm ID","Demo Status","Demo Rep","Demo Date","Demo Rescheduled Date","Set up Status","Set up #1 date","Set up #2 date","Pre-set up requirements met?","Set up Rep","Set up CSAT","Closed lost reason","MRR increase"];
+  STATE.header = ["Firm Name","Firm ID","Demo Status","Demo Rep","Demo Date","Demo Rescheduled Date","Set up Status","Set up #1 date","Set up #2 date","Set up closed date","Pre-set up requirements met?","Set up Rep","Set up CSAT","Closed lost reason","MRR increase","Created at"];
   STATE.cols = resolveColumns(STATE.header);
   const raw = [
-    ["VIP Law","2365","Completed - Won","Justin","7/16/26","","Completed","7/17/26","7/20/26","TRUE","Rosa","5","","$150"],
-    ["Harbor & Vance","2410","Completed","Priya","7/14/26","","Completed","7/15/26","","TRUE","Rosa","4","","$220"],
-    ["Cedar Legal","2410","Scheduled","Marcus","7/18/26","","Not Started","","","FALSE","","","","" ],
-    ["Alderman LLP","2501","Completed - Lost","Priya","7/10/26","7/19/26","Not Started","","","FALSE","","","Price",""],
-    ["Brightwater Firm","2555","Completed - Won","Justin","7/09/26","","Completed","7/11/26","7/13/26","TRUE","Dev","5","","$300"],
-    ["Pinnacle Counsel","2560","Completed - Lost","Marcus","7/08/26","","Not Started","","","FALSE","","","Chose competitor",""],
+    ["VIP Law","2365","Completed - Won","Justin","7/16/26","","Completed","7/17/26","7/20/26","7/20/26","TRUE","Rosa","5","","$150","7/14/26"],
+    ["Harbor & Vance","2410","Completed","Priya","7/14/26","","Completed","7/15/26","","7/16/26","TRUE","Rosa","4","","$220","7/12/26"],
+    ["Cedar Legal","2410","Scheduled","Marcus","7/18/26","","Not Started","","","","FALSE","","","","","7/17/26"],
+    ["Alderman LLP","2501","Completed - Lost","Priya","7/10/26","7/19/26","Not Started","","","","FALSE","","","Price","","7/09/26"],
+    ["Brightwater Firm","2555","Completed - Won","Justin","7/09/26","","Completed","7/11/26","7/13/26","7/13/26","TRUE","Dev","5","","$300","7/07/26"],
+    ["Pinnacle Counsel","2560","Completed - Lost","Marcus","7/08/26","","Not Started","","","","FALSE","","","Chose competitor","","7/06/26"],
   ];
   STATE.data = raw.map((r, i) => normalizeRow(r, i + 2));
   STATE.dupIds = computeDuplicates(STATE.data);
