@@ -715,6 +715,7 @@ function beginEdit(td) {
   if (activeEditor) cancelEdit();
   const row = +td.dataset.row, field = td.dataset.field, type = td.dataset.type;
   const d = STATE.data.find((x) => x._row === row);
+  window.__beginEdit = { row, field, type, foundD: !!d, value: d ? d[field] : undefined };
   if (!d) return;
 
   const options = choiceOptions(field, type);
@@ -794,7 +795,8 @@ function openDropdown(td, d, field, type, options) {
   document.body.appendChild(pop);
   positionDropdown(pop, td);
 
-  ddState = { pop, td, d, field, type };
+  ddState = { pop, td, d, field, type, t: performance.now() };
+  window.__ddDebug = { field, foundD: !!d, options: (options || []).length, rect: pop.getBoundingClientRect(), z: getComputedStyle(pop).zIndex, opacity: getComputedStyle(pop).opacity };
   pop.querySelectorAll(".dd-item").forEach((btn) => btn.addEventListener("click", (e) => {
     e.stopPropagation();
     const ctx = ddState, v = btn.dataset.v;
@@ -828,9 +830,19 @@ function positionDropdown(pop, td) {
   const popH = pop.offsetHeight;
   pop.style.top = (openUp ? (r.top - popH - gap) : (r.bottom + gap)) + "px";
 }
-// Close on page/table scroll, but NOT when scrolling inside the dropdown itself.
-function ddScroll(e) { if (ddState && ddState.pop.contains(e.target)) return; closeDropdown(); }
-function ddOutside(e) { if (ddState && !ddState.pop.contains(e.target)) closeDropdown(); }
+// Close on page/table scroll, but NOT when scrolling inside the dropdown itself,
+// and NOT from a layout scroll fired in the first moments after opening.
+function ddScroll(e) {
+  if (!ddState) return;
+  if (performance.now() - ddState.t < 250) return;      // ignore open-induced scroll
+  if (ddState.pop.contains(e.target)) return;
+  closeDropdown();
+}
+function ddOutside(e) {
+  if (!ddState) return;
+  if (performance.now() - ddState.t < 60) return;       // ignore the opening interaction
+  if (!ddState.pop.contains(e.target)) closeDropdown();
+}
 function ddKey(e) { if (e.key === "Escape") { e.preventDefault(); closeDropdown(); } }
 function closeDropdown() {
   if (!ddState) return;
@@ -1246,7 +1258,10 @@ function boot() {
   // duplicate handlers (which caused the flaky "click around till it works" bug).
   document.getElementById("tableWrap").addEventListener("click", (e) => {
     const td = e.target.closest("td.editable");
-    if (td && !td.classList.contains("editing") && !td.classList.contains("saving")) beginEdit(td);
+    if (!td) return;
+    if (activeEditor && activeEditor.td === td) return;   // input already open on this cell
+    if (ddState && ddState.td === td) return;             // dropdown already open on this cell
+    beginEdit(td);
   });
   document.getElementById("reviewJump").addEventListener("click", () => document.getElementById("reviewSection").scrollIntoView({ behavior: "smooth", block: "start" }));
   ["fltRep", "fltDemo", "fltSetup"].forEach((id) => { const s = document.getElementById(id); if (s) s.addEventListener("change", onFilterChange); });
