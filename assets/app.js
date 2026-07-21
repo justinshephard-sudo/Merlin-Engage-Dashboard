@@ -520,6 +520,9 @@ function computeAttention(data) {
     if (!isCompleted(d.setupStatus) && has(d.setup1Date) && past(d.setup1Date) && !has(d.setup2Date)) {
       out.push({ d, cls: "info", tag: "No setup #2", action: "Schedule the Setup #2 call", rep: setupRep }); continue;
     }
+    if (isCompleted(d.setupStatus) && !has(d.setupClosed)) {
+      out.push({ d, cls: "warn", tag: "No closed date", action: "Add the set up closed date", rep: setupRep }); continue;
+    }
   }
   return out;
 }
@@ -858,6 +861,7 @@ async function applyEdit(td, d, field, type, raw) {
   td.innerHTML = `<span class="cell-spinner"></span>`;
   try {
     await writeCell(d._row, field, raw);
+    const justCompletedSetup = field === "setupStatus" && isCompleted(newVal) && !isCompleted(oldVal);
     d[field] = newVal;
     STATE.dupIds = computeDuplicates(STATE.data);
     td.classList.remove("saving");
@@ -865,6 +869,7 @@ async function applyEdit(td, d, field, type, raw) {
     renderDerived();
     refreshCell(td, d, field);
     setTimeout(() => td.classList.remove("saved"), 1200);
+    if (justCompletedSetup) celebrate();               // 🎉 setup complete!
   } catch (err) {
     td.classList.remove("saving");
     td.classList.add("save-err");
@@ -875,6 +880,42 @@ async function applyEdit(td, d, field, type, raw) {
   }
 }
 function rebindCell(td) { td.onclick = () => beginEdit(td); }
+
+/* Page-wide confetti burst — fired when a setup is marked Completed. */
+function celebrate() {
+  const c = document.createElement("canvas");
+  c.style.cssText = "position:fixed;inset:0;width:100%;height:100%;pointer-events:none;z-index:9999";
+  document.body.appendChild(c);
+  const ctx = c.getContext("2d");
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  c.width = innerWidth * dpr; c.height = innerHeight * dpr; ctx.scale(dpr, dpr);
+  const colors = ["#068bff", "#03b0db", "#a2daf3", "#f76300", "#0ca35a", "#4a3aa7", "#eda100"];
+  const parts = Array.from({ length: 180 }, (_, i) => ({
+    x: Math.random() * innerWidth,
+    y: -20 - Math.random() * innerHeight * 0.4,
+    vx: (Math.random() - 0.5) * 7,
+    vy: 3 + Math.random() * 6,
+    w: 6 + Math.random() * 7, h: 8 + Math.random() * 9,
+    rot: Math.random() * Math.PI, vr: (Math.random() - 0.5) * 0.35,
+    color: colors[i % colors.length], shape: Math.random() < 0.5 ? 0 : 1,
+  }));
+  const dur = 2800; let start = null;
+  function frame(t) {
+    if (start == null) start = t;
+    const el = t - start;
+    ctx.clearRect(0, 0, innerWidth, innerHeight);
+    const fade = el > dur - 700 ? Math.max(0, (dur - el) / 700) : 1;
+    for (const p of parts) {
+      p.x += p.vx; p.y += p.vy; p.vy += 0.13; p.vx *= 0.99; p.rot += p.vr;
+      ctx.save(); ctx.globalAlpha = fade; ctx.translate(p.x, p.y); ctx.rotate(p.rot); ctx.fillStyle = p.color;
+      if (p.shape === 0) ctx.fillRect(-p.w / 2, -p.h / 2, p.w, p.h);
+      else { ctx.beginPath(); ctx.ellipse(0, 0, p.w / 2, p.h / 2, 0, 0, 7); ctx.fill(); }
+      ctx.restore();
+    }
+    if (el < dur) requestAnimationFrame(frame); else c.remove();
+  }
+  requestAnimationFrame(frame);
+}
 
 function displayValueWrap(d, field) {
   const c = TABLE_COLS.find((x) => x.field === field);
