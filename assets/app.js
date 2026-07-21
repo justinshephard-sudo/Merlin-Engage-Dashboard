@@ -677,7 +677,7 @@ function renderTable() {
     if (TABLE_STATE.sortKey === k) TABLE_STATE.dir *= -1; else { TABLE_STATE.sortKey = k; TABLE_STATE.dir = 1; }
     renderTable();
   }));
-  document.querySelectorAll("td.editable").forEach((td) => td.addEventListener("click", () => beginEdit(td)));
+  // Cell clicks are handled by a single delegated listener on #tableWrap (see boot).
 }
 
 function displayValue(d, c) {
@@ -804,7 +804,9 @@ function openDropdown(td, d, field, type, options) {
   const sel = pop.querySelector(".dd-item.sel");
   if (sel) sel.scrollIntoView({ block: "nearest" });
 
-  setTimeout(() => document.addEventListener("mousedown", ddOutside, true), 0);
+  // Opened from a 'click' handler — the opening mousedown already fired, so we can
+  // attach the outside-close listener synchronously (no fragile setTimeout race).
+  document.addEventListener("mousedown", ddOutside, true);
   document.addEventListener("keydown", ddKey, true);
   window.addEventListener("scroll", ddScroll, true);
   window.addEventListener("resize", closeDropdown, true);
@@ -879,7 +881,7 @@ async function applyEdit(td, d, field, type, raw) {
     setTimeout(() => td.classList.remove("save-err"), 2000);
   }
 }
-function rebindCell(td) { td.onclick = () => beginEdit(td); }
+function rebindCell(td) { /* no-op: clicks handled by the delegated #tableWrap listener */ }
 
 /* Page-wide confetti burst — fired when a setup is marked Completed. */
 function celebrate() {
@@ -926,8 +928,7 @@ function refreshCell(td, d, field) {
   td.innerHTML = displayValueWrap(d, field);
   // dup highlight can change for the firmId column
   if (field === "firmId") td.classList.toggle("dup", STATE.dupIds.has(d.firmId));
-  // re-attach click
-  td.onclick = () => beginEdit(td);
+  // (clicks handled by the delegated #tableWrap listener — no per-cell rebind)
   // if IDs changed, other rows' dup state may change → cheap: mark all firmId cells
   document.querySelectorAll('td[data-field="firmId"]').forEach((cellTd) => {
     const r = +cellTd.dataset.row, rd = STATE.data.find((x) => x._row === r);
@@ -1240,6 +1241,13 @@ function boot() {
   initTheme();
   document.getElementById("refreshBtn").addEventListener("click", () => refresh());
   document.getElementById("search").addEventListener("input", (e) => { TABLE_STATE.query = e.target.value; renderTable(); });
+  // One delegated listener on the persistent table container: a click anywhere in
+  // an editable cell opens its editor. Survives table re-renders; no per-cell or
+  // duplicate handlers (which caused the flaky "click around till it works" bug).
+  document.getElementById("tableWrap").addEventListener("click", (e) => {
+    const td = e.target.closest("td.editable");
+    if (td && !td.classList.contains("editing") && !td.classList.contains("saving")) beginEdit(td);
+  });
   document.getElementById("reviewJump").addEventListener("click", () => document.getElementById("reviewSection").scrollIntoView({ behavior: "smooth", block: "start" }));
   ["fltRep", "fltDemo", "fltSetup"].forEach((id) => { const s = document.getElementById(id); if (s) s.addEventListener("change", onFilterChange); });
   const clr = document.getElementById("fltClear"); if (clr) clr.addEventListener("click", clearFilters);
