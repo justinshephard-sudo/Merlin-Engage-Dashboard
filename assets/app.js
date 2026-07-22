@@ -38,11 +38,14 @@ const STATE = {
   tokenClient: null,
   user: null,          // { email, name, picture }
   sheetTitle: null,    // resolved tab name for A1 ranges
+  formSheetTitle: null,// resolved "Form Submission Data" tab name (matched by matter ID)
   header: [],
   cols: {},
   data: [],            // normalized rows (each has ._row = absolute sheet row)
   dupIds: new Set(),
   validations: {},     // field -> { type: 'list', options: [...] } | { type: 'bool' }
+  forms: {},           // matterId -> [ { matterId, _row, title, fields:[{label,value}] } ]
+  formHeader: [],      // header row of the form-submission tab
 };
 
 /* --------------------------------------------------------------------------
@@ -147,6 +150,12 @@ function normalizeRow(r, rowNumber) {
     createdAt: cell(r, c.createdAt),
     matterId: cell(r, c.matterId),
   };
+}
+
+/* Demo-form submissions matching a firm's Matter ID (empty array if none). */
+function formsFor(matterId) {
+  const id = String(matterId ?? "").trim();
+  return id && STATE.forms[id] ? STATE.forms[id] : [];
 }
 
 /* --------------------------------------------------------------------------
@@ -709,14 +718,27 @@ function displayValue(d, c) {
   return v ? esc(v) : '<span class="cross">—</span>';
 }
 
+/* Non-editable adornments rendered inside a cell: the duplicate-ID flag, and —
+   on the firm name — a button to preview the matching demo-form submission. */
+function cellExtras(d, field) {
+  let s = "";
+  if (field === "firmId" && STATE.dupIds.has(d.firmId))
+    s += ' <span class="dup-flag" title="Duplicate Firm ID">⚠</span>';
+  if (field === "firmName") {
+    const subs = formsFor(d.matterId);
+    if (subs.length)
+      s += ` <button class="form-view-btn" data-matter="${esc(d.matterId)}" title="View demo form submission">📋 Form${subs.length > 1 ? ` (${subs.length})` : ""}</button>`;
+  }
+  return s;
+}
+
 function cellHtml(d, c, dupCls) {
   if (c.type === "actions") {
     const mid = esc(d.matterId || "");
     return `<td class="log-cell"><button class="row-form-btn" data-form="demo" data-matter="${mid}" title="Log post-demo form">Demo</button><button class="row-form-btn" data-form="setup" data-matter="${mid}" title="Log post-setup form">Setup</button></td>`;
   }
-  const idFlag = c.field === "firmId" && STATE.dupIds.has(d.firmId) ? ' <span class="dup-flag" title="Duplicate Firm ID">⚠</span>' : "";
   const cls = ["editable", c.cls || "", (c.type === "num" || c.type === "money") ? "num" : "", c.field === "firmId" ? dupCls : ""].filter(Boolean).join(" ");
-  return `<td class="${cls}" data-row="${d._row}" data-field="${c.field}" data-type="${c.type}">${displayValue(d, c)}${idFlag}<span class="edit-hint"></span></td>`;
+  return `<td class="${cls}" data-row="${d._row}" data-field="${c.field}" data-type="${c.type}">${displayValue(d, c)}${cellExtras(d, c.field)}<span class="edit-hint"></span></td>`;
 }
 
 /* -------- inline editing -------- */
@@ -959,6 +981,42 @@ function closeFormModal() {
   document.body.style.overflow = "";
 }
 
+/* -------- Demo-form submission preview (read-only, matched by Matter ID) -------- */
+// Long-form answers get a full-width block; short answers sit two-per-row.
+const WIDE_FIELD = (label, value) =>
+  /challenge|process|criteria|note|comment|describe|why|goal|about/i.test(label) || String(value).length > 60;
+
+function renderSubmissionCard(sub, idx, total) {
+  const rows = sub.fields.map((f) => `
+    <div class="sm-field${WIDE_FIELD(f.label, f.value) ? " sm-wide" : ""}">
+      <div class="sm-label">${esc(f.label)}</div>
+      <div class="sm-value">${esc(f.value)}</div>
+    </div>`).join("");
+  const heading = total > 1
+    ? `<div class="sm-card-head">Submission ${idx + 1} of ${total}${sub.title ? ` · ${esc(sub.title)}` : ""}</div>`
+    : "";
+  return `<div class="sm-card">${heading}<div class="sm-grid">${rows || '<div class="fm-empty">This submission has no filled-in fields.</div>'}</div></div>`;
+}
+
+function openSubmissionModal(matterId) {
+  const subs = formsFor(matterId);
+  if (!subs.length) return;
+  const firm = STATE.data.find((d) => String(d.matterId ?? "").trim() === String(matterId).trim());
+  const name = (firm && firm.firmName) || subs[0].title || "Firm";
+  document.getElementById("smTitle").innerHTML =
+    `Demo Form Submission · ${esc(name)} <span class="sm-mid">Matter ${esc(matterId)}</span>`;
+  document.getElementById("smBody").innerHTML = subs.map((s, i) => renderSubmissionCard(s, i, subs.length)).join("");
+  document.getElementById("subModal").classList.remove("hidden");
+  document.body.style.overflow = "hidden";
+}
+function closeSubModal() {
+  const modal = document.getElementById("subModal");
+  if (!modal || modal.classList.contains("hidden")) return;
+  modal.classList.add("hidden");
+  document.getElementById("smBody").innerHTML = "";
+  document.body.style.overflow = "";
+}
+
 /* Page-wide confetti burst — fired when a setup is marked Completed. */
 function celebrate() {
   const c = document.createElement("canvas");
@@ -997,8 +1055,7 @@ function celebrate() {
 
 function displayValueWrap(d, field) {
   const c = TABLE_COLS.find((x) => x.field === field);
-  const idFlag = field === "firmId" && STATE.dupIds.has(d.firmId) ? ' <span class="dup-flag" title="Duplicate Firm ID">⚠</span>' : "";
-  return displayValue(d, c) + idFlag + '<span class="edit-hint"></span>';
+  return displayValue(d, c) + cellExtras(d, field) + '<span class="edit-hint"></span>';
 }
 function refreshCell(td, d, field) {
   td.innerHTML = displayValueWrap(d, field);
@@ -1068,8 +1125,50 @@ async function apiFetch(url, opts = {}) {
 
 async function resolveSheetTitle() {
   const meta = await apiFetch(`https://sheets.googleapis.com/v4/spreadsheets/${CONFIG.SHEET_ID}?fields=sheets(properties(sheetId,title))`);
-  const match = (meta.sheets || []).find((s) => s.properties.sheetId === CONFIG.GID);
-  STATE.sheetTitle = (match || meta.sheets[0]).properties.title;
+  const sheets = meta.sheets || [];
+  const match = sheets.find((s) => s.properties.sheetId === CONFIG.GID);
+  STATE.sheetTitle = (match || sheets[0]).properties.title;
+  // Find the demo-form submission tab by title (fuzzy, so a rename/typo still resolves).
+  const others = sheets.filter((s) => s.properties.sheetId !== CONFIG.GID);
+  const formTab = others.find((s) => /form/i.test(s.properties.title))
+               || others.find((s) => /su[bm]?miss/i.test(s.properties.title));
+  STATE.formSheetTitle = formTab ? formTab.properties.title : null;
+}
+
+/* Load the "Form Submission Data" tab and index each submission by Matter ID.
+   Non-fatal: a missing/renamed tab just means no form previews. */
+async function loadFormSubmissions() {
+  STATE.forms = {};
+  STATE.formHeader = [];
+  if (MOCK) return loadMockForms();
+  if (!STATE.formSheetTitle) return;
+  try {
+    const range = encodeURIComponent(quoteTitle(STATE.formSheetTitle));
+    const json = await apiFetch(`https://sheets.googleapis.com/v4/spreadsheets/${CONFIG.SHEET_ID}/values/${range}?majorDimension=ROWS`);
+    const values = json.values || [];
+    if (values.length < 2) return;
+    const header = (values[0] || []).map((h) => (h || "").trim());
+    STATE.formHeader = header;
+    const midIdx = header.findIndex((h) => /matter/i.test(h));
+    if (midIdx < 0) return;
+    const titleIdx = header.findIndex((h) => /case title/i.test(h));
+    const firmIdx = header.findIndex((h) => /firm name/i.test(h));
+    values.slice(1).forEach((r, i) => {
+      const mid = String(r[midIdx] ?? "").trim();
+      if (!mid) return;
+      const fields = [];
+      header.forEach((label, ci) => {
+        if (ci === midIdx || !label) return;
+        const val = String(r[ci] ?? "").trim();
+        if (val) fields.push({ label, value: val });
+      });
+      const title = (titleIdx >= 0 && r[titleIdx]) ? String(r[titleIdx]).trim()
+                  : (firmIdx >= 0 && r[firmIdx]) ? String(r[firmIdx]).trim() : "";
+      (STATE.forms[mid] = STATE.forms[mid] || []).push({ matterId: mid, _row: i + 2, title, fields });
+    });
+  } catch (e) {
+    console.warn("Couldn't load form submissions.", e);
+  }
 }
 
 async function loadData() {
@@ -1085,6 +1184,7 @@ async function loadData() {
     .filter((d) => d.firmName || d.firmId);
   STATE.dupIds = computeDuplicates(STATE.data);
   await loadValidations();
+  await loadFormSubmissions();
 }
 
 /* Read the sheet's data-validation (dropdown) rules so the inline editors
@@ -1286,6 +1386,7 @@ function loadMock() {
   ];
   STATE.data = raw.map((r, i) => normalizeRow(r, i + 2));
   STATE.dupIds = computeDuplicates(STATE.data);
+  loadMockForms();
   // Stand-in for the sheet's real data-validation dropdowns (fetched live in prod).
   STATE.validations = {
     demoStatus:  { type: "list", options: ["Scheduled", "Completed", "Completed - Won", "Completed - Lost", "Rescheduled", "No Show", "Cancelled"] },
@@ -1293,6 +1394,35 @@ function loadMock() {
     csat:        { type: "list", options: ["1", "2", "3", "4", "5"] },
     preReq:      { type: "bool" },
     closedLost:  { type: "list", options: ["Chose competitor", "Price", "No response", "Not a fit", "Timing", "Went in-house"] },
+  };
+}
+
+/* Mock demo-form submissions (?mock=1), keyed to two mock firms' Matter IDs. */
+function loadMockForms() {
+  STATE.formHeader = ["Case Title", "firm name", "first name", "last name", "email", "role at the firm", "practice area 1", "practice area 2", "twilio enabled?", "primary lead source", "biggest intake challenge", "current qualification process", "success criteria with engage", "avg lead volume", "already have qualifyai?", "customer readiness", "demo notes", "ready to schedule call?", "matter ID"];
+  const mk = (o) => ({ matterId: o.mid, _row: o._row, title: o.title, fields: Object.entries(o.f).map(([label, value]) => ({ label, value })) });
+  STATE.forms = {
+    "18301169": [mk({ mid: "18301169", _row: 2, title: "VIP Law", f: {
+      "Case Title": "VIP Law", "firm name": "VIP Law", "first name": "Keri", "last name": "Iwasaki",
+      "email": "keri@lawmatics.com", "role at the firm": "Managing Partner",
+      "practice area 1": "Family Law", "practice area 2": "Estate Planning",
+      "twilio enabled?": "Yes", "primary lead source": "Meta & Website",
+      "biggest intake challenge": "Leads pile up overnight and on weekends — the team can't tell which to work first in the morning.",
+      "current qualification process": "A phone/email qualification form backed by follow-up automations and callbacks.",
+      "success criteria with engage": "Raise lead-to-consult conversion and stop losing after-hours leads.",
+      "avg lead volume": "50", "already have qualifyai?": "No", "customer readiness": "Highly engaged",
+      "demo notes": "Wants QualifyAI live before next campaign push. Decision maker on the call.",
+      "ready to schedule call?": "Yes" } })],
+    "20551234": [mk({ mid: "20551234", _row: 3, title: "Brightwater Firm", f: {
+      "Case Title": "Brightwater Firm", "firm name": "Brightwater Firm", "first name": "Dana", "last name": "Cole",
+      "email": "dana@brightwater.com", "role at the firm": "Operations Lead",
+      "practice area 1": "Personal Injury", "twilio enabled?": "No", "primary lead source": "Referrals",
+      "biggest intake challenge": "No structured intake — everything lives in email threads.",
+      "current qualification process": "Ad-hoc; paralegal calls back when time allows.",
+      "success criteria with engage": "A single intake pipeline with automatic follow-up.",
+      "avg lead volume": "30", "already have qualifyai?": "No", "customer readiness": "Ready to buy",
+      "demo notes": "Price-sensitive but sees the value. Wants a 2-week rollout.",
+      "ready to schedule call?": "Yes" } })],
   };
 }
 
@@ -1321,6 +1451,8 @@ function boot() {
   // an editable cell opens its editor. Survives table re-renders; no per-cell or
   // duplicate handlers (which caused the flaky "click around till it works" bug).
   document.getElementById("tableWrap").addEventListener("click", (e) => {
+    const viewBtn = e.target.closest(".form-view-btn");
+    if (viewBtn) { openSubmissionModal(viewBtn.dataset.matter); return; }
     const formBtn = e.target.closest(".row-form-btn");
     if (formBtn) { openFormModal(formBtn.dataset.form, formBtn.dataset.matter); return; }
     const td = e.target.closest("td.editable");
@@ -1333,7 +1465,9 @@ function boot() {
   document.querySelectorAll(".form-open-btn").forEach((b) => b.addEventListener("click", () => openFormModal(b.dataset.form)));
   document.getElementById("fmClose").addEventListener("click", closeFormModal);
   document.getElementById("formModal").addEventListener("click", (e) => { if (e.target.id === "formModal" || e.target.classList.contains("fm-backdrop")) closeFormModal(); });
-  document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeFormModal(); });
+  document.getElementById("smClose").addEventListener("click", closeSubModal);
+  document.getElementById("subModal").addEventListener("click", (e) => { if (e.target.id === "subModal" || e.target.classList.contains("fm-backdrop")) closeSubModal(); });
+  document.addEventListener("keydown", (e) => { if (e.key === "Escape") { closeFormModal(); closeSubModal(); } });
   document.getElementById("reviewJump").addEventListener("click", () => document.getElementById("reviewSection").scrollIntoView({ behavior: "smooth", block: "start" }));
   ["fltRep", "fltDemo", "fltSetup"].forEach((id) => { const s = document.getElementById(id); if (s) s.addEventListener("change", onFilterChange); });
   const clr = document.getElementById("fltClear"); if (clr) clr.addEventListener("click", clearFilters);
