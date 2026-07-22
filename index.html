@@ -71,6 +71,9 @@
       <select id="fltSetup" class="fb-select"><option value="">All setup statuses</option></select>
       <span class="fb-count" id="fltCount"></span>
       <button class="fb-clear hidden" id="fltClear">Clear ✕</button>
+      <span class="fb-spacer"></span>
+      <button class="form-open-btn" data-form="demo">📝 Post-Demo Form</button>
+      <button class="form-open-btn" data-form="setup">📝 Post-Setup Form</button>
     </div>
 
     <!-- KPI tiles -->
@@ -167,6 +170,22 @@
       · changes tracked in Google Version History
     </p>
   </main>
+
+  <!-- ============================ FORM MODAL ============================ -->
+  <div id="formModal" class="form-modal hidden">
+    <div class="fm-backdrop"></div>
+    <div class="fm-dialog">
+      <div class="fm-head">
+        <span class="fm-title" id="fmTitle"></span>
+        <button class="fm-close" id="fmClose" aria-label="Close">✕</button>
+      </div>
+      <div class="fm-body" id="fmBody"></div>
+    </div>
+  </div>
+
+  <!-- ===== Paste your Lawmatics form embed snippets between the template tags ===== -->
+  <template id="tpl-demo-form"><!-- PASTE THE POST-DEMO FORM EMBED SNIPPET HERE --></template>
+  <template id="tpl-setup-form"><!-- PASTE THE POST-SETUP FORM EMBED SNIPPET HERE --></template>
 
   <div id="tip"></div>
   <div id="toast" class="toast"></div>

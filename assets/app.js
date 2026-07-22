@@ -20,6 +20,12 @@ const CONFIG = {
   GID: 0,                              // the numeric tab id (from #gid= in the URL)
   ALLOWED_DOMAIN: "lawmatics.com",
   SCOPES: "https://www.googleapis.com/auth/spreadsheets https://www.googleapis.com/auth/userinfo.email",
+  // Post-call forms opened from the dashboard. Paste each embed snippet into the
+  // matching <template> in index.html (#tpl-demo-form / #tpl-setup-form).
+  FORMS: {
+    demo:  { label: "Post-Demo Form",  tpl: "tpl-demo-form" },
+    setup: { label: "Post-Setup Form", tpl: "tpl-setup-form" },
+  },
 };
 
 const MOCK = new URLSearchParams(location.search).has("mock");
@@ -87,6 +93,7 @@ const TABLE_COLS = [
   { field: "csat",        label: "CSAT",               type: "num" },
   { field: "closedLost",  label: "Closed Lost Reason", type: "text" },
   { field: "mrr",         label: "MRR",                type: "money" },
+  { field: "_log",        label: "Log",                type: "actions" },
 ];
 
 /* --------------------------------------------------------------------------
@@ -659,7 +666,9 @@ function renderTable() {
   document.getElementById("rowCount").textContent = `${rows.length} firm${rows.length === 1 ? "" : "s"}`;
 
   const head = TABLE_COLS.map((c) =>
-    `<th data-key="${c.field}" class="${c.field === sortKey ? "sorted" : ""}">${c.label}<span class="arrow">${c.field === sortKey ? (dir > 0 ? "▲" : "▼") : "↕"}</span></th>`
+    c.type === "actions"
+      ? `<th class="log-th">${c.label}</th>`
+      : `<th data-key="${c.field}" class="${c.field === sortKey ? "sorted" : ""}">${c.label}<span class="arrow">${c.field === sortKey ? (dir > 0 ? "▲" : "▼") : "↕"}</span></th>`
   ).join("");
 
   const body = rows.length ? rows.map((d) => {
@@ -674,6 +683,7 @@ function renderTable() {
 
   document.querySelectorAll("thead th").forEach((th) => th.addEventListener("click", () => {
     const k = th.dataset.key;
+    if (!k) return;                                        // non-sortable (e.g. the Log column)
     if (TABLE_STATE.sortKey === k) TABLE_STATE.dir *= -1; else { TABLE_STATE.sortKey = k; TABLE_STATE.dir = 1; }
     renderTable();
   }));
@@ -690,6 +700,9 @@ function displayValue(d, c) {
 }
 
 function cellHtml(d, c, dupCls) {
+  if (c.type === "actions") {
+    return `<td class="log-cell"><button class="row-form-btn" data-form="demo" title="Log post-demo form">Demo</button><button class="row-form-btn" data-form="setup" title="Log post-setup form">Setup</button></td>`;
+  }
   const idFlag = c.field === "firmId" && STATE.dupIds.has(d.firmId) ? ' <span class="dup-flag" title="Duplicate Firm ID">⚠</span>' : "";
   const cls = ["editable", c.cls || "", (c.type === "num" || c.type === "money") ? "num" : "", c.field === "firmId" ? dupCls : ""].filter(Boolean).join(" ");
   return `<td class="${cls}" data-row="${d._row}" data-field="${c.field}" data-type="${c.type}">${displayValue(d, c)}${idFlag}<span class="edit-hint"></span></td>`;
@@ -892,6 +905,39 @@ async function applyEdit(td, d, field, type, raw) {
   }
 }
 function rebindCell(td) { /* no-op: clicks handled by the delegated #tableWrap listener */ }
+
+/* -------- Post-call form modals (embed snippets) -------- */
+function injectEmbed(container, node) {
+  container.innerHTML = "";
+  container.appendChild(node);
+  // Scripts inserted via cloneNode/innerHTML don't execute — re-create them so they run.
+  container.querySelectorAll("script").forEach((old) => {
+    const s = document.createElement("script");
+    for (const a of old.attributes) s.setAttribute(a.name, a.value);
+    s.textContent = old.textContent;
+    old.replaceWith(s);
+  });
+}
+function openFormModal(which) {
+  const f = CONFIG.FORMS[which];
+  if (!f) return;
+  const modal = document.getElementById("formModal");
+  document.getElementById("fmTitle").textContent = f.label;
+  const body = document.getElementById("fmBody");
+  const tpl = document.getElementById(f.tpl);
+  const hasSnippet = tpl && tpl.content && tpl.content.childElementCount > 0;
+  if (hasSnippet) injectEmbed(body, tpl.content.cloneNode(true));
+  else body.innerHTML = `<div class="fm-empty">This form isn't set up yet.<br>Paste its embed snippet into <code>&lt;template id="${f.tpl}"&gt;</code> in <code>index.html</code>.</div>`;
+  modal.classList.remove("hidden");
+  document.body.style.overflow = "hidden";                 // lock page scroll behind the modal
+}
+function closeFormModal() {
+  const modal = document.getElementById("formModal");
+  if (!modal || modal.classList.contains("hidden")) return;
+  modal.classList.add("hidden");
+  document.getElementById("fmBody").innerHTML = "";        // unload the form (stops iframe, resets state)
+  document.body.style.overflow = "";
+}
 
 /* Page-wide confetti burst — fired when a setup is marked Completed. */
 function celebrate() {
@@ -1255,12 +1301,19 @@ function boot() {
   // an editable cell opens its editor. Survives table re-renders; no per-cell or
   // duplicate handlers (which caused the flaky "click around till it works" bug).
   document.getElementById("tableWrap").addEventListener("click", (e) => {
+    const formBtn = e.target.closest(".row-form-btn");
+    if (formBtn) { openFormModal(formBtn.dataset.form); return; }
     const td = e.target.closest("td.editable");
     if (!td) return;
     if (activeEditor && activeEditor.td === td) return;   // input already open on this cell
     if (ddState && ddState.td === td) return;             // dropdown already open on this cell
     beginEdit(td);
   });
+  // Top-bar form buttons + modal close (X, backdrop, Esc).
+  document.querySelectorAll(".form-open-btn").forEach((b) => b.addEventListener("click", () => openFormModal(b.dataset.form)));
+  document.getElementById("fmClose").addEventListener("click", closeFormModal);
+  document.getElementById("formModal").addEventListener("click", (e) => { if (e.target.id === "formModal" || e.target.classList.contains("fm-backdrop")) closeFormModal(); });
+  document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeFormModal(); });
   document.getElementById("reviewJump").addEventListener("click", () => document.getElementById("reviewSection").scrollIntoView({ behavior: "smooth", block: "start" }));
   ["fltRep", "fltDemo", "fltSetup"].forEach((id) => { const s = document.getElementById(id); if (s) s.addEventListener("change", onFilterChange); });
   const clr = document.getElementById("fltClear"); if (clr) clr.addEventListener("click", clearFilters);
