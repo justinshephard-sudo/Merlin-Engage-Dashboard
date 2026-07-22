@@ -65,6 +65,7 @@ const FIELD_MATCHERS = {
   closedLost:  (h) => h.includes("closed lost"),
   mrr:         (h) => h.includes("mrr"),
   createdAt:   (h) => h.includes("created"),
+  matterId:    (h) => h.includes("matter"),
 };
 
 function resolveColumns(headerRow) {
@@ -144,6 +145,7 @@ function normalizeRow(r, rowNumber) {
     closedLost: cell(r, c.closedLost),
     mrr: toNumber(cell(r, c.mrr)),
     createdAt: cell(r, c.createdAt),
+    matterId: cell(r, c.matterId),
   };
 }
 
@@ -606,7 +608,8 @@ function renderNeedsReview() {
 /* --------------------------------------------------------------------------
    TABLE (searchable, sortable, inline-editable)
    -------------------------------------------------------------------------- */
-let TABLE_STATE = { sortKey: "firmName", dir: 1, query: "" };
+let TABLE_STATE = { sortKey: "createdAt", dir: -1, query: "" };   // default: newest Created at on top
+const DATE_FIELDS = new Set(["createdAt", "demoDate", "demoResched", "setup1Date", "setup2Date", "setupClosed"]);
 let activeEditor = null;
 
 /* --------------------------------------------------------------------------
@@ -657,6 +660,14 @@ function renderTable() {
   let rows = activeData().filter((d) => !q ||
     [d.firmName, d.firmId, d.demoRep, d.setupRep, d.demoStatus, d.setupStatus, d.closedLost].some((v) => (v || "").toLowerCase().includes(q)));
   rows = rows.slice().sort((a, b) => {
+    if (DATE_FIELDS.has(sortKey)) {                       // date-aware; blanks always sort last
+      const ta = parseDate(a[sortKey]), tb = parseDate(b[sortKey]);
+      const va = ta ? ta.getTime() : null, vb = tb ? tb.getTime() : null;
+      if (va == null && vb == null) return 0;
+      if (va == null) return 1;
+      if (vb == null) return -1;
+      return (va - vb) * dir;
+    }
     let av = a[sortKey], bv = b[sortKey];
     if (typeof av === "number" || typeof bv === "number") return ((av || 0) - (bv || 0)) * dir;
     return String(av || "").localeCompare(String(bv || "")) * dir;
@@ -700,7 +711,8 @@ function displayValue(d, c) {
 
 function cellHtml(d, c, dupCls) {
   if (c.type === "actions") {
-    return `<td class="log-cell"><button class="row-form-btn" data-form="demo" title="Log post-demo form">Demo</button><button class="row-form-btn" data-form="setup" title="Log post-setup form">Setup</button></td>`;
+    const mid = esc(d.matterId || "");
+    return `<td class="log-cell"><button class="row-form-btn" data-form="demo" data-matter="${mid}" title="Log post-demo form">Demo</button><button class="row-form-btn" data-form="setup" data-matter="${mid}" title="Log post-setup form">Setup</button></td>`;
   }
   const idFlag = c.field === "firmId" && STATE.dupIds.has(d.firmId) ? ' <span class="dup-flag" title="Duplicate Firm ID">⚠</span>' : "";
   const cls = ["editable", c.cls || "", (c.type === "num" || c.type === "money") ? "num" : "", c.field === "firmId" ? dupCls : ""].filter(Boolean).join(" ");
@@ -906,14 +918,19 @@ async function applyEdit(td, d, field, type, raw) {
 function rebindCell(td) { /* no-op: clicks handled by the delegated #tableWrap listener */ }
 
 /* -------- Post-call form modals (iframe by URL) -------- */
-function openFormModal(which) {
+function openFormModal(which, matterId) {
   const f = CONFIG.FORMS[which];
   if (!f) return;
   const modal = document.getElementById("formModal");
   document.getElementById("fmTitle").textContent = f.label;
   const body = document.getElementById("fmBody");
-  if (f.url) body.innerHTML = `<iframe src="${esc(f.url)}" title="${esc(f.label)}" allow="clipboard-write"></iframe>`;
-  else body.innerHTML = `<div class="fm-empty">This form isn't set up yet.<br>Paste its URL into <code>CONFIG.FORMS.${which}.url</code> in <code>assets/app.js</code>.</div>`;
+  if (f.url) {
+    // From a row with a Matter ID, prefill the form's "id" field (skips FIND MATTER).
+    const url = matterId ? f.url + (f.url.includes("?") ? "&" : "?") + "id=" + encodeURIComponent(matterId) : f.url;
+    body.innerHTML = `<iframe src="${esc(url)}" title="${esc(f.label)}" allow="clipboard-write"></iframe>`;
+  } else {
+    body.innerHTML = `<div class="fm-empty">This form isn't set up yet.<br>Paste its URL into <code>CONFIG.FORMS.${which}.url</code> in <code>assets/app.js</code>.</div>`;
+  }
   modal.classList.remove("hidden");
   document.body.style.overflow = "hidden";                 // lock page scroll behind the modal
 }
@@ -1240,15 +1257,15 @@ function setBadge(cls, text) {
    -------------------------------------------------------------------------- */
 function loadMock() {
   STATE.sheetTitle = "Sheet1";
-  STATE.header = ["Firm Name","Firm ID","Demo Status","Demo Rep","Demo Date","Demo Rescheduled Date","Set up Status","Set up #1 date","Set up #2 date","Set up closed date","Pre-set up requirements met?","Set up Rep","Set up CSAT","Closed lost reason","MRR increase","Created at"];
+  STATE.header = ["Firm Name","Firm ID","Demo Status","Demo Rep","Demo Date","Demo Rescheduled Date","Set up Status","Set up #1 date","Set up #2 date","Set up closed date","Pre-set up requirements met?","Set up Rep","Set up CSAT","Closed lost reason","MRR increase","Created at","Matter ID"];
   STATE.cols = resolveColumns(STATE.header);
   const raw = [
-    ["VIP Law","2365","Completed - Won","Justin","7/16/26","","Completed","7/17/26","7/20/26","7/20/26","TRUE","Rosa","5","","$150","7/14/26"],
-    ["Harbor & Vance","2410","Completed","Priya","7/14/26","","Completed","7/15/26","","7/16/26","TRUE","Rosa","4","","$220","7/12/26"],
-    ["Cedar Legal","2410","Scheduled","Marcus","7/18/26","","Not Started","","","","FALSE","","","","","7/17/26"],
-    ["Alderman LLP","2501","Completed - Lost","Priya","7/10/26","7/19/26","Not Started","","","","FALSE","","","Price","","7/09/26"],
-    ["Brightwater Firm","2555","Completed - Won","Justin","7/09/26","","Completed","7/11/26","7/13/26","7/13/26","TRUE","Dev","5","","$300","7/07/26"],
-    ["Pinnacle Counsel","2560","Completed - Lost","Marcus","7/08/26","","Not Started","","","","FALSE","","","Chose competitor","","7/06/26"],
+    ["VIP Law","2365","Completed - Won","Justin","7/16/26","","Completed","7/17/26","7/20/26","7/20/26","TRUE","Rosa","5","","$150","7/14/26","18301169"],
+    ["Harbor & Vance","2410","Completed","Priya","7/14/26","","Completed","7/15/26","","7/16/26","TRUE","Rosa","4","","$220","7/12/26","9863542"],
+    ["Cedar Legal","2410","Scheduled","Marcus","7/18/26","","Not Started","","","","FALSE","","","","","7/17/26",""],
+    ["Alderman LLP","2501","Completed - Lost","Priya","7/10/26","7/19/26","Not Started","","","","FALSE","","","Price","","7/09/26",""],
+    ["Brightwater Firm","2555","Completed - Won","Justin","7/09/26","","Completed","7/11/26","7/13/26","7/13/26","TRUE","Dev","5","","$300","7/07/26","20551234"],
+    ["Pinnacle Counsel","2560","Completed - Lost","Marcus","7/08/26","","Not Started","","","","FALSE","","","Chose competitor","","7/06/26",""],
   ];
   STATE.data = raw.map((r, i) => normalizeRow(r, i + 2));
   STATE.dupIds = computeDuplicates(STATE.data);
@@ -1288,7 +1305,7 @@ function boot() {
   // duplicate handlers (which caused the flaky "click around till it works" bug).
   document.getElementById("tableWrap").addEventListener("click", (e) => {
     const formBtn = e.target.closest(".row-form-btn");
-    if (formBtn) { openFormModal(formBtn.dataset.form); return; }
+    if (formBtn) { openFormModal(formBtn.dataset.form, formBtn.dataset.matter); return; }
     const td = e.target.closest("td.editable");
     if (!td) return;
     if (activeEditor && activeEditor.td === td) return;   // input already open on this cell
