@@ -531,4 +531,5 @@ tbody tr.row-flash td { animation: rowflash 1.6s ease; }
 }
 .toast.show { opacity: 1; transform: translate(-50%, 0); }
 .toast.err { background: var(--st-critical); }
+.toast.ok { background: var(--st-good); }
 :root[data-theme="dark"] .toast { border: 1px solid var(--border); }

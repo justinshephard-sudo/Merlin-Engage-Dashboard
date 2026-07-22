@@ -924,15 +924,32 @@ function openFormModal(which, matterId) {
   const modal = document.getElementById("formModal");
   document.getElementById("fmTitle").textContent = f.label;
   const body = document.getElementById("fmBody");
-  if (f.url) {
-    // From a row with a Matter ID, prefill the form's "id" field (skips FIND MATTER).
-    const url = matterId ? f.url + (f.url.includes("?") ? "&" : "?") + "id=" + encodeURIComponent(matterId) : f.url;
-    body.innerHTML = `<iframe src="${esc(url)}" title="${esc(f.label)}" allow="clipboard-write"></iframe>`;
-  } else {
-    body.innerHTML = `<div class="fm-empty">This form isn't set up yet.<br>Paste its URL into <code>CONFIG.FORMS.${which}.url</code> in <code>assets/app.js</code>.</div>`;
-  }
+  if (f.url) body.innerHTML = `<iframe src="${esc(f.url)}" title="${esc(f.label)}" allow="clipboard-write"></iframe>`;
+  else body.innerHTML = `<div class="fm-empty">This form isn't set up yet.<br>Paste its URL into <code>CONFIG.FORMS.${which}.url</code> in <code>assets/app.js</code>.</div>`;
   modal.classList.remove("hidden");
   document.body.style.overflow = "hidden";                 // lock page scroll behind the modal
+  // Opened from a row with a Matter ID → copy it so the rep just pastes into "Find Matter".
+  if (matterId && f.url) copyMatterId(matterId);
+}
+
+function copyMatterId(id) {
+  const ok = () => toast(`Matter ID ${id} copied — paste it into “Find Matter”`, "ok");
+  const manual = () => toast(`Matter ID: ${id}`, "");
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(id).then(ok).catch(() => fallbackCopy(id, ok, manual));
+  } else {
+    fallbackCopy(id, ok, manual);
+  }
+}
+function fallbackCopy(text, ok, manual) {
+  try {
+    const ta = document.createElement("textarea");
+    ta.value = text; ta.style.position = "fixed"; ta.style.opacity = "0";
+    document.body.appendChild(ta); ta.focus(); ta.select();
+    const done = document.execCommand("copy");
+    ta.remove();
+    done ? ok() : manual();
+  } catch (e) { manual(); }
 }
 function closeFormModal() {
   const modal = document.getElementById("formModal");
