@@ -20,11 +20,10 @@ const CONFIG = {
   GID: 0,                              // the numeric tab id (from #gid= in the URL)
   ALLOWED_DOMAIN: "lawmatics.com",
   SCOPES: "https://www.googleapis.com/auth/spreadsheets https://www.googleapis.com/auth/userinfo.email",
-  // Post-call forms opened from the dashboard. Paste each embed snippet into the
-  // matching <template> in index.html (#tpl-demo-form / #tpl-setup-form).
+  // Post-call forms opened from the dashboard. Paste each form's URL here.
   FORMS: {
-    demo:  { label: "Post-Demo Form",  tpl: "tpl-demo-form" },
-    setup: { label: "Post-Setup Form", tpl: "tpl-setup-form" },
+    demo:  { label: "Post-Demo Form",  url: "" },   // <-- paste the post-demo form URL
+    setup: { label: "Post-Setup Form", url: "" },   // <-- paste the post-setup form URL
   },
 };
 
@@ -906,28 +905,15 @@ async function applyEdit(td, d, field, type, raw) {
 }
 function rebindCell(td) { /* no-op: clicks handled by the delegated #tableWrap listener */ }
 
-/* -------- Post-call form modals (embed snippets) -------- */
-function injectEmbed(container, node) {
-  container.innerHTML = "";
-  container.appendChild(node);
-  // Scripts inserted via cloneNode/innerHTML don't execute — re-create them so they run.
-  container.querySelectorAll("script").forEach((old) => {
-    const s = document.createElement("script");
-    for (const a of old.attributes) s.setAttribute(a.name, a.value);
-    s.textContent = old.textContent;
-    old.replaceWith(s);
-  });
-}
+/* -------- Post-call form modals (iframe by URL) -------- */
 function openFormModal(which) {
   const f = CONFIG.FORMS[which];
   if (!f) return;
   const modal = document.getElementById("formModal");
   document.getElementById("fmTitle").textContent = f.label;
   const body = document.getElementById("fmBody");
-  const tpl = document.getElementById(f.tpl);
-  const hasSnippet = tpl && tpl.content && tpl.content.childElementCount > 0;
-  if (hasSnippet) injectEmbed(body, tpl.content.cloneNode(true));
-  else body.innerHTML = `<div class="fm-empty">This form isn't set up yet.<br>Paste its embed snippet into <code>&lt;template id="${f.tpl}"&gt;</code> in <code>index.html</code>.</div>`;
+  if (f.url) body.innerHTML = `<iframe src="${esc(f.url)}" title="${esc(f.label)}" allow="clipboard-write"></iframe>`;
+  else body.innerHTML = `<div class="fm-empty">This form isn't set up yet.<br>Paste its URL into <code>CONFIG.FORMS.${which}.url</code> in <code>assets/app.js</code>.</div>`;
   modal.classList.remove("hidden");
   document.body.style.overflow = "hidden";                 // lock page scroll behind the modal
 }
