@@ -22,7 +22,7 @@ const CONFIG = {
   SCOPES: "https://www.googleapis.com/auth/spreadsheets https://www.googleapis.com/auth/userinfo.email",
   // Post-call forms opened from the dashboard. Paste each form's URL here.
   FORMS: {
-    demo:  { label: "Post-Demo Form",  url: "" },   // <-- paste the post-demo form URL
+    demo:  { label: "Post-Demo Form",  url: "https://app.lawmatics.com/forms/update-by-id/cd142d3b-f01a-4fe2-b9b9-fe8447be29f8" },
     setup: { label: "Post-Setup Form", url: "" },   // <-- paste the post-setup form URL
   },
 };
