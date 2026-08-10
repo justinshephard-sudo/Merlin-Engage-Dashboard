@@ -939,19 +939,47 @@ async function applyEdit(td, d, field, type, raw) {
 }
 function rebindCell(td) { /* no-op: clicks handled by the delegated #tableWrap listener */ }
 
-/* -------- Post-call form modals (iframe by URL) -------- */
+/* -------- Post-call form launcher --------
+   Lawmatics forms send X-Frame-Options / frame-ancestors, so they refuse to
+   load in an iframe. And update-by-id forms can't be URL-prefilled. So we open
+   the form in a NEW TAB (right from the click, so pop-up blockers allow it) and
+   show a small helper panel with the Matter ID to paste into "Find Matter". */
 function openFormModal(which, matterId) {
   const f = CONFIG.FORMS[which];
   if (!f) return;
   const modal = document.getElementById("formModal");
   document.getElementById("fmTitle").textContent = f.label;
   const body = document.getElementById("fmBody");
-  if (f.url) body.innerHTML = `<iframe src="${esc(f.url)}" title="${esc(f.label)}" allow="clipboard-write"></iframe>`;
-  else body.innerHTML = `<div class="fm-empty">This form isn't set up yet.<br>Paste its URL into <code>CONFIG.FORMS.${which}.url</code> in <code>assets/app.js</code>.</div>`;
+
+  if (!f.url) {
+    body.innerHTML = `<div class="fm-empty">This form isn't set up yet.<br>Paste its URL into <code>CONFIG.FORMS.${which}.url</code> in <code>assets/app.js</code>.</div>`;
+    modal.classList.remove("hidden");
+    document.body.style.overflow = "hidden";
+    return;
+  }
+
+  // Open the form in a new tab (synchronous with the click → not blocked).
+  const win = window.open(f.url, "_blank");
+  if (win) win.opener = null;                              // sever opener for security
+
+  // Copy the Matter ID so the rep just pastes it into "Find Matter".
+  if (matterId) copyMatterId(matterId);
+
+  const idBlock = matterId
+    ? `<p class="fm-help-id">Matter ID <b>${esc(matterId)}</b> copied to your clipboard — paste it into <b>“Find Matter”</b> at the top of the form.</p>`
+    : "";
+  const blockedNote = win
+    ? ""
+    : `<p class="fm-help-warn">Your browser blocked the new tab. Use the button below to open the form.</p>`;
+  body.innerHTML = `
+    <div class="fm-help">
+      <p class="fm-help-lead">The ${esc(f.label)} opened in a new tab.<br>It can't be embedded here, so it runs on app.lawmatics.com directly.</p>
+      ${idBlock}
+      ${blockedNote}
+      <a class="fm-open-link" href="${esc(f.url)}" target="_blank" rel="noopener">Open ${esc(f.label)} ↗</a>
+    </div>`;
   modal.classList.remove("hidden");
   document.body.style.overflow = "hidden";                 // lock page scroll behind the modal
-  // Opened from a row with a Matter ID → copy it so the rep just pastes into "Find Matter".
-  if (matterId && f.url) copyMatterId(matterId);
 }
 
 function copyMatterId(id) {
