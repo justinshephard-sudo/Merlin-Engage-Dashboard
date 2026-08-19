@@ -69,6 +69,7 @@ const FIELD_MATCHERS = {
   mrr:         (h) => h.includes("mrr"),
   createdAt:   (h) => h.includes("created"),
   matterId:    (h) => h.includes("matter"),
+  contract:    (h) => h.includes("contract"),
 };
 
 function resolveColumns(headerRow) {
@@ -96,6 +97,7 @@ const TABLE_COLS = [
   { field: "csat",        label: "CSAT",               type: "num" },
   { field: "closedLost",  label: "Closed Lost Reason", type: "text" },
   { field: "mrr",         label: "MRR",                type: "money" },
+  { field: "contract",    label: "Contract",           type: "status" },
   { field: "_log",        label: "Log",                type: "actions" },
 ];
 
@@ -119,7 +121,7 @@ function classifyStatus(raw) {
   const s = (raw || "").trim(), l = s.toLowerCase();
   if (!l) return { label: "—", cls: "neutral" };
   if (/(closed\s*)?lost|churn|declin/.test(l)) return { label: s, cls: "critical" };
-  if (/complet|done|finish|live|won/.test(l))  return { label: s, cls: "good" };
+  if (/complet|done|finish|live|won|signed/.test(l))  return { label: s, cls: "good" };
   if (/no[-\s]?show|cancel|missed/.test(l))    return { label: s, cls: "serious" };
   if (/reschedul|delay|pending|hold/.test(l))  return { label: s, cls: "warn" };
   if (/schedul|book|set|progress|active/.test(l)) return { label: s, cls: "info" };
@@ -149,6 +151,7 @@ function normalizeRow(r, rowNumber) {
     mrr: toNumber(cell(r, c.mrr)),
     createdAt: cell(r, c.createdAt),
     matterId: cell(r, c.matterId),
+    contract: cell(r, c.contract),
   };
 }
 
@@ -752,6 +755,7 @@ function choiceOptions(field, type) {
   if (rule && rule.type === "list" && rule.options.length) return rule.options.slice();
   if ((rule && rule.type === "bool") || type === "bool") return ["TRUE", "FALSE"];
   if (field === "demoStatus" || field === "setupStatus") return [...new Set(distinctValues(field).concat(STATUS_SUGGEST))];
+  if (field === "contract") return ["Sent", "Signed", "N/A"];
   if (field === "csat") return ["1", "2", "3", "4", "5"];
   return null;
 }
@@ -958,12 +962,14 @@ function openFormModal(which, matterId) {
     return;
   }
 
-  // Open the form in a new tab (synchronous with the click → not blocked).
+  // Copy the Matter ID FIRST, while the dashboard still has focus — the
+  // Clipboard API and execCommand fallback both fail once window.open shifts
+  // focus to the new tab, so this must run before we open it.
+  if (matterId) copyMatterId(matterId);
+
+  // Then open the form in a new tab (synchronous with the click → not blocked).
   const win = window.open(f.url, "_blank");
   if (win) win.opener = null;                              // sever opener for security
-
-  // Copy the Matter ID so the rep just pastes it into "Find Matter".
-  if (matterId) copyMatterId(matterId);
 
   const idBlock = matterId
     ? `<p class="fm-help-id">Matter ID <b>${esc(matterId)}</b> copied to your clipboard — paste it into <b>“Find Matter”</b> at the top of the form.</p>`
@@ -1402,15 +1408,15 @@ function setBadge(cls, text) {
    -------------------------------------------------------------------------- */
 function loadMock() {
   STATE.sheetTitle = "Sheet1";
-  STATE.header = ["Firm Name","Firm ID","Demo Status","Demo Rep","Demo Date","Demo Rescheduled Date","Set up Status","Set up #1 date","Set up #2 date","Set up closed date","Pre-set up requirements met?","Set up Rep","Set up CSAT","Closed lost reason","MRR increase","Created at","Matter ID"];
+  STATE.header = ["Firm Name","Firm ID","Demo Status","Demo Rep","Demo Date","Demo Rescheduled Date","Set up Status","Set up #1 date","Set up #2 date","Set up closed date","Pre-set up requirements met?","Set up Rep","Set up CSAT","Closed lost reason","MRR increase","Created at","Matter ID","Contract"];
   STATE.cols = resolveColumns(STATE.header);
   const raw = [
-    ["VIP Law","2365","Completed - Won","Justin","7/16/26","","Completed","7/17/26","7/20/26","7/20/26","TRUE","Rosa","5","","$150","7/14/26","18301169"],
-    ["Harbor & Vance","2410","Completed","Priya","7/14/26","","Completed","7/15/26","","7/16/26","TRUE","Rosa","4","","$220","7/12/26","9863542"],
-    ["Cedar Legal","2410","Scheduled","Marcus","7/18/26","","Not Started","","","","FALSE","","","","","7/17/26",""],
-    ["Alderman LLP","2501","Completed - Lost","Priya","7/10/26","7/19/26","Not Started","","","","FALSE","","","Price","","7/09/26",""],
-    ["Brightwater Firm","2555","Completed - Won","Justin","7/09/26","","Completed","7/11/26","7/13/26","7/13/26","TRUE","Dev","5","","$300","7/07/26","20551234"],
-    ["Pinnacle Counsel","2560","Completed - Lost","Marcus","7/08/26","","Not Started","","","","FALSE","","","Chose competitor","","7/06/26",""],
+    ["VIP Law","2365","Completed - Won","Justin","7/16/26","","Completed","7/17/26","7/20/26","7/20/26","TRUE","Rosa","5","","$150","7/14/26","18301169","Signed"],
+    ["Harbor & Vance","2410","Completed","Priya","7/14/26","","Completed","7/15/26","","7/16/26","TRUE","Rosa","4","","$220","7/12/26","9863542","Sent"],
+    ["Cedar Legal","2410","Scheduled","Marcus","7/18/26","","Not Started","","","","FALSE","","","","","7/17/26","","N/A"],
+    ["Alderman LLP","2501","Completed - Lost","Priya","7/10/26","7/19/26","Not Started","","","","FALSE","","","Price","","7/09/26","","N/A"],
+    ["Brightwater Firm","2555","Completed - Won","Justin","7/09/26","","Completed","7/11/26","7/13/26","7/13/26","TRUE","Dev","5","","$300","7/07/26","20551234","Signed"],
+    ["Pinnacle Counsel","2560","Completed - Lost","Marcus","7/08/26","","Not Started","","","","FALSE","","","Chose competitor","","7/06/26","",""],
   ];
   STATE.data = raw.map((r, i) => normalizeRow(r, i + 2));
   STATE.dupIds = computeDuplicates(STATE.data);
@@ -1422,6 +1428,7 @@ function loadMock() {
     csat:        { type: "list", options: ["1", "2", "3", "4", "5"] },
     preReq:      { type: "bool" },
     closedLost:  { type: "list", options: ["Chose competitor", "Price", "No response", "Not a fit", "Timing", "Went in-house"] },
+    contract:    { type: "list", options: ["Sent", "Signed", "N/A"] },
   };
 }
 
