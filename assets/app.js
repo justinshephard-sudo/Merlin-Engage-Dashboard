@@ -70,6 +70,8 @@ const FIELD_MATCHERS = {
   createdAt:   (h) => h.includes("created"),
   matterId:    (h) => h.includes("matter"),
   contract:    (h) => h.includes("contract"),
+  tier:        (h) => h.includes("tier"),
+  discount:    (h) => h.includes("discount"),
 };
 
 function resolveColumns(headerRow) {
@@ -97,6 +99,8 @@ const TABLE_COLS = [
   { field: "csat",        label: "CSAT",               type: "num" },
   { field: "closedLost",  label: "Closed Lost Reason", type: "text" },
   { field: "mrr",         label: "MRR",                type: "money" },
+  { field: "tier",        label: "Tier",               type: "text" },
+  { field: "discount",    label: "Discount",           type: "percent" },
   { field: "contract",    label: "Contract",           type: "status" },
   { field: "_log",        label: "Log",                type: "actions" },
 ];
@@ -152,6 +156,8 @@ function normalizeRow(r, rowNumber) {
     createdAt: cell(r, c.createdAt),
     matterId: cell(r, c.matterId),
     contract: cell(r, c.contract),
+    tier: cell(r, c.tier),
+    discount: cell(r, c.discount),
   };
 }
 
@@ -718,6 +724,7 @@ function displayValue(d, c) {
   if (c.type === "bool")  return v === true ? '<span class="tick">✓</span>' : '<span class="cross">—</span>';
   if (c.type === "num")   return v != null ? v : '<span class="cross">—</span>';
   if (c.type === "money") return v != null ? `<span class="${v > 0 ? "mrr-pos" : ""}">${fmtMoney(v)}</span>` : '<span class="cross">—</span>';
+  if (c.type === "percent") return v ? esc(String(v).replace(/%+\s*$/, "").trim() + "%") : '<span class="cross">—</span>';
   return v ? esc(v) : '<span class="cross">—</span>';
 }
 
@@ -740,7 +747,7 @@ function cellHtml(d, c, dupCls) {
     const mid = esc(d.matterId || "");
     return `<td class="log-cell"><button class="row-form-btn" data-form="demo" data-matter="${mid}" title="Log post-demo form">Demo</button><button class="row-form-btn" data-form="setup" data-matter="${mid}" title="Log post-setup form">Setup</button></td>`;
   }
-  const cls = ["editable", c.cls || "", (c.type === "num" || c.type === "money") ? "num" : "", c.field === "firmId" ? dupCls : ""].filter(Boolean).join(" ");
+  const cls = ["editable", c.cls || "", (c.type === "num" || c.type === "money" || c.type === "percent") ? "num" : "", c.field === "firmId" ? dupCls : ""].filter(Boolean).join(" ");
   return `<td class="${cls}" data-row="${d._row}" data-field="${c.field}" data-type="${c.type}">${displayValue(d, c)}${cellExtras(d, c.field)}<span class="edit-hint"></span></td>`;
 }
 
@@ -783,6 +790,9 @@ function beginEdit(td) {
     editor.value = cur || "";
   } else if (type === "num") {
     editor = document.createElement("input"); editor.type = "number"; editor.step = "1"; editor.value = cur ?? "";
+  } else if (type === "percent") {
+    editor = document.createElement("input"); editor.type = "text"; editor.inputMode = "decimal";
+    editor.value = cur != null ? String(cur).replace(/%+\s*$/, "").trim() : "";
   } else {
     editor = document.createElement("input"); editor.type = "text"; editor.value = (type === "money" && cur != null) ? cur : (cur || "");
   }
@@ -910,6 +920,7 @@ async function applyEdit(td, d, field, type, raw) {
   let newVal;
   if (type === "bool") newVal = raw === "TRUE" ? true : raw === "FALSE" ? false : null;
   else if (type === "num" || type === "money") newVal = raw === "" ? null : toNumber(raw);
+  else if (type === "percent") newVal = raw === "" ? "" : raw.replace(/%+\s*$/, "").trim() + "%";
   else newVal = raw;
 
   const oldVal = d[field];
@@ -922,7 +933,7 @@ async function applyEdit(td, d, field, type, raw) {
   td.classList.add("saving");
   td.innerHTML = `<span class="cell-spinner"></span>`;
   try {
-    await writeCell(d._row, field, raw);
+    await writeCell(d._row, field, type === "percent" ? newVal : raw);
     const justCompletedSetup = field === "setupStatus" && isCompleted(newVal) && !isCompleted(oldVal);
     d[field] = newVal;
     STATE.dupIds = computeDuplicates(STATE.data);
@@ -1408,15 +1419,15 @@ function setBadge(cls, text) {
    -------------------------------------------------------------------------- */
 function loadMock() {
   STATE.sheetTitle = "Sheet1";
-  STATE.header = ["Firm Name","Firm ID","Demo Status","Demo Rep","Demo Date","Demo Rescheduled Date","Set up Status","Set up #1 date","Set up #2 date","Set up closed date","Pre-set up requirements met?","Set up Rep","Set up CSAT","Closed lost reason","MRR increase","Created at","Matter ID","Contract"];
+  STATE.header = ["Firm Name","Firm ID","Demo Status","Demo Rep","Demo Date","Demo Rescheduled Date","Set up Status","Set up #1 date","Set up #2 date","Set up closed date","Pre-set up requirements met?","Set up Rep","Set up CSAT","Closed lost reason","MRR increase","Created at","Matter ID","Contract","Tier","Discount"];
   STATE.cols = resolveColumns(STATE.header);
   const raw = [
-    ["VIP Law","2365","Completed - Won","Justin","7/16/26","","Completed","7/17/26","7/20/26","7/20/26","TRUE","Rosa","5","","$150","7/14/26","18301169","Signed"],
-    ["Harbor & Vance","2410","Completed","Priya","7/14/26","","Completed","7/15/26","","7/16/26","TRUE","Rosa","4","","$220","7/12/26","9863542","Sent"],
-    ["Cedar Legal","2410","Scheduled","Marcus","7/18/26","","Not Started","","","","FALSE","","","","","7/17/26","","N/A"],
-    ["Alderman LLP","2501","Completed - Lost","Priya","7/10/26","7/19/26","Not Started","","","","FALSE","","","Price","","7/09/26","","N/A"],
-    ["Brightwater Firm","2555","Completed - Won","Justin","7/09/26","","Completed","7/11/26","7/13/26","7/13/26","TRUE","Dev","5","","$300","7/07/26","20551234","Signed"],
-    ["Pinnacle Counsel","2560","Completed - Lost","Marcus","7/08/26","","Not Started","","","","FALSE","","","Chose competitor","","7/06/26","",""],
+    ["VIP Law","2365","Completed - Won","Justin","7/16/26","","Completed","7/17/26","7/20/26","7/20/26","TRUE","Rosa","5","","$150","7/14/26","18301169","Signed","Enterprise","10%"],
+    ["Harbor & Vance","2410","Completed","Priya","7/14/26","","Completed","7/15/26","","7/16/26","TRUE","Rosa","4","","$220","7/12/26","9863542","Sent","Growth","15%"],
+    ["Cedar Legal","2410","Scheduled","Marcus","7/18/26","","Not Started","","","","FALSE","","","","","7/17/26","","N/A","Starter",""],
+    ["Alderman LLP","2501","Completed - Lost","Priya","7/10/26","7/19/26","Not Started","","","","FALSE","","","Price","","7/09/26","","N/A","","0%"],
+    ["Brightwater Firm","2555","Completed - Won","Justin","7/09/26","","Completed","7/11/26","7/13/26","7/13/26","TRUE","Dev","5","","$300","7/07/26","20551234","Signed","Enterprise","20"],
+    ["Pinnacle Counsel","2560","Completed - Lost","Marcus","7/08/26","","Not Started","","","","FALSE","","","Chose competitor","","7/06/26","","","Growth","5%"],
   ];
   STATE.data = raw.map((r, i) => normalizeRow(r, i + 2));
   STATE.dupIds = computeDuplicates(STATE.data);
