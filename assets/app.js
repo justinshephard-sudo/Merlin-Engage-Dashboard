@@ -38,6 +38,7 @@ const STATE = {
   tokenClient: null,
   user: null,          // { email, name, picture }
   sheetTitle: null,    // resolved tab name for A1 ranges
+  sheetId: null,       // resolved numeric tab id, for row deletion
   formSheetTitle: null,// resolved "Form Submission Data" tab name (matched by matter ID)
   header: [],
   cols: {},
@@ -103,6 +104,7 @@ const TABLE_COLS = [
   { field: "discount",    label: "Discount",           type: "percent" },
   { field: "contract",    label: "Contract",           type: "status" },
   { field: "_log",        label: "Log",                type: "actions" },
+  { field: "_delete",     label: "",                   type: "delete" },
 ];
 
 /* --------------------------------------------------------------------------
@@ -290,6 +292,7 @@ const ICON = {
   lost: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M15 9l-6 6M9 9l6 6"/></svg>',
   conv: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 6l-9.5 9.5-5-5L1 18"/><path d="M17 6h6v6"/></svg>',
   won: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 21h8M12 17v4M7 4h10v5a5 5 0 0 1-10 0zM7 4H4v2a3 3 0 0 0 3 3M17 4h3v2a3 3 0 0 1-3 3"/></svg>',
+  trash: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2m2 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6M10 11v6M14 11v6"/></svg>',
 };
 const starSvg = (f) => `<svg viewBox="0 0 24 24" fill="${f ? "var(--lm-orange)" : "none"}" stroke="${f ? "var(--lm-orange)" : "var(--text-3)"}" stroke-width="1.6" stroke-linejoin="round"><path d="M12 2l3.1 6.3 6.9 1-5 4.9 1.2 6.9L12 17.8 5.8 21l1.2-6.9-5-4.9 6.9-1z"/></svg>`;
 
@@ -694,8 +697,8 @@ function renderTable() {
   document.getElementById("rowCount").textContent = `${rows.length} firm${rows.length === 1 ? "" : "s"}`;
 
   const head = TABLE_COLS.map((c) =>
-    c.type === "actions"
-      ? `<th class="log-th">${c.label}</th>`
+    (c.type === "actions" || c.type === "delete")
+      ? `<th class="${c.type === "delete" ? "del-th" : "log-th"}">${c.label}</th>`
       : `<th data-key="${c.field}" class="${c.field === sortKey ? "sorted" : ""}">${c.label}<span class="arrow">${c.field === sortKey ? (dir > 0 ? "▲" : "▼") : "↕"}</span></th>`
   ).join("");
 
@@ -746,6 +749,9 @@ function cellHtml(d, c, dupCls) {
   if (c.type === "actions") {
     const mid = esc(d.matterId || "");
     return `<td class="log-cell"><button class="row-form-btn" data-form="demo" data-matter="${mid}" title="Log post-demo form">Demo</button><button class="row-form-btn" data-form="setup" data-matter="${mid}" title="Log post-setup form">Setup</button></td>`;
+  }
+  if (c.type === "delete") {
+    return `<td class="del-cell"><button class="row-del-btn" data-row="${d._row}" data-firm="${esc(d.firmName || d.firmId || "this firm")}" title="Delete this firm's row from the sheet" aria-label="Delete firm">${ICON.trash}</button></td>`;
   }
   const cls = ["editable", c.cls || "", (c.type === "num" || c.type === "money" || c.type === "percent") ? "num" : "", c.field === "firmId" ? dupCls : ""].filter(Boolean).join(" ");
   return `<td class="${cls}" data-row="${d._row}" data-field="${c.field}" data-type="${c.type}">${displayValue(d, c)}${cellExtras(d, c.field)}<span class="edit-hint"></span></td>`;
@@ -1062,6 +1068,59 @@ function closeSubModal() {
   document.body.style.overflow = "";
 }
 
+/* -------- Delete a firm's row (hard delete, with confirmation) -------- */
+let pendingDelete = null;   // { row, firm } awaiting confirmation
+
+function openDeleteConfirm(row, firm) {
+  pendingDelete = { row, firm };
+  document.getElementById("cmBody").innerHTML =
+    `<p class="cm-lead">Permanently delete <b>${esc(firm)}</b>?</p>
+     <p class="cm-sub">This removes the entire row — every field for this firm — from the tracker sheet. It can still be recovered from the sheet's <b>Version History</b>, but not from this dashboard.</p>`;
+  const del = document.getElementById("cmDelete");
+  del.disabled = false; del.textContent = "Delete firm";
+  document.getElementById("confirmModal").classList.remove("hidden");
+  document.body.style.overflow = "hidden";
+}
+function closeConfirm() {
+  const modal = document.getElementById("confirmModal");
+  if (!modal || modal.classList.contains("hidden")) return;
+  modal.classList.add("hidden");
+  document.body.style.overflow = "";
+  pendingDelete = null;
+}
+async function confirmDelete() {
+  if (!pendingDelete) return;
+  const { row, firm } = pendingDelete;
+  const del = document.getElementById("cmDelete");
+  del.disabled = true; del.textContent = "Deleting…";
+  try {
+    await deleteSheetRow(row);
+    if (MOCK) {
+      STATE.data = STATE.data.filter((x) => x._row !== row);
+      STATE.dupIds = computeDuplicates(STATE.data);
+      closeConfirm();
+      renderAll();
+    } else {
+      // The deleted row shifts every row below it up by one, so re-fetch to
+      // resync absolute row numbers before any further edits/writes.
+      closeConfirm();
+      await refresh();
+    }
+    toast(`Deleted ${firm}`, "ok");
+  } catch (err) {
+    del.disabled = false; del.textContent = "Delete firm";
+    toast(`Couldn't delete ${firm}: ${err.message}`, "err");
+  }
+}
+/* Hard-delete one sheet row via the Sheets batchUpdate deleteDimension request. */
+async function deleteSheetRow(rowNumber) {
+  if (MOCK) { await new Promise((r) => setTimeout(r, 350)); return; }   // simulate latency
+  const sheetId = STATE.sheetId != null ? STATE.sheetId : CONFIG.GID;
+  const url = `https://sheets.googleapis.com/v4/spreadsheets/${CONFIG.SHEET_ID}:batchUpdate`;
+  const body = { requests: [{ deleteDimension: { range: { sheetId, dimension: "ROWS", startIndex: rowNumber - 1, endIndex: rowNumber } } }] };
+  await apiFetch(url, { method: "POST", body: JSON.stringify(body) });
+}
+
 /* Page-wide confetti burst — fired when a setup is marked Completed. */
 function celebrate() {
   const c = document.createElement("canvas");
@@ -1173,6 +1232,7 @@ async function resolveSheetTitle() {
   const sheets = meta.sheets || [];
   const match = sheets.find((s) => s.properties.sheetId === CONFIG.GID);
   STATE.sheetTitle = (match || sheets[0]).properties.title;
+  STATE.sheetId = (match || sheets[0]).properties.sheetId;   // numeric tab id, for row deletion
   // Find the demo-form submission tab by title (fuzzy, so a rename/typo still resolves).
   const others = sheets.filter((s) => s.properties.sheetId !== CONFIG.GID);
   const formTab = others.find((s) => /form/i.test(s.properties.title))
@@ -1501,6 +1561,8 @@ function boot() {
     if (viewBtn) { openSubmissionModal(viewBtn.dataset.matter); return; }
     const formBtn = e.target.closest(".row-form-btn");
     if (formBtn) { openFormModal(formBtn.dataset.form, formBtn.dataset.matter); return; }
+    const delBtn = e.target.closest(".row-del-btn");
+    if (delBtn) { openDeleteConfirm(+delBtn.dataset.row, delBtn.dataset.firm); return; }
     const td = e.target.closest("td.editable");
     if (!td) return;
     if (activeEditor && activeEditor.td === td) return;   // input already open on this cell
@@ -1513,7 +1575,12 @@ function boot() {
   document.getElementById("formModal").addEventListener("click", (e) => { if (e.target.id === "formModal" || e.target.classList.contains("fm-backdrop")) closeFormModal(); });
   document.getElementById("smClose").addEventListener("click", closeSubModal);
   document.getElementById("subModal").addEventListener("click", (e) => { if (e.target.id === "subModal" || e.target.classList.contains("fm-backdrop")) closeSubModal(); });
-  document.addEventListener("keydown", (e) => { if (e.key === "Escape") { closeFormModal(); closeSubModal(); } });
+  // Delete-confirm modal: cancel (X / Cancel / backdrop) and confirm.
+  document.getElementById("cmClose").addEventListener("click", closeConfirm);
+  document.getElementById("cmCancel").addEventListener("click", closeConfirm);
+  document.getElementById("confirmModal").addEventListener("click", (e) => { if (e.target.id === "confirmModal" || e.target.classList.contains("fm-backdrop")) closeConfirm(); });
+  document.getElementById("cmDelete").addEventListener("click", confirmDelete);
+  document.addEventListener("keydown", (e) => { if (e.key === "Escape") { closeFormModal(); closeSubModal(); closeConfirm(); } });
   document.getElementById("reviewJump").addEventListener("click", () => document.getElementById("reviewSection").scrollIntoView({ behavior: "smooth", block: "start" }));
   ["fltRep", "fltDemo", "fltSetup"].forEach((id) => { const s = document.getElementById(id); if (s) s.addEventListener("change", onFilterChange); });
   const clr = document.getElementById("fltClear"); if (clr) clr.addEventListener("click", clearFilters);

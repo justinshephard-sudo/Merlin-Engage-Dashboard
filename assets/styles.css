@@ -204,6 +204,31 @@ body { overflow-x: clip; }
 .row-form-btn:last-child { margin-right: 0; }
 .row-form-btn:hover { background: rgba(6,139,255,.12); }
 
+/* Per-row delete (trash) */
+.del-th { width: 36px; }
+.del-cell { text-align: center; white-space: nowrap; }
+.row-del-btn {
+  cursor: pointer; display: inline-flex; align-items: center; justify-content: center;
+  width: 26px; height: 26px; padding: 0; border-radius: 6px;
+  color: var(--text-3); background: transparent; border: 1px solid transparent;
+  transition: color .12s, background .12s, border-color .12s;
+}
+.row-del-btn svg { width: 15px; height: 15px; }
+.row-del-btn:hover { color: var(--st-critical); background: rgba(216,58,58,.1); border-color: rgba(216,58,58,.3); }
+
+/* Delete-confirm modal */
+.cm-dialog { width: min(440px, 100%); }
+.cm-body { min-height: 0; padding: 20px 22px 4px; }
+.cm-lead { margin: 0 0 8px; font-size: 15px; color: var(--text-1); }
+.cm-sub { margin: 0; font-size: 13px; line-height: 1.55; color: var(--text-2); }
+.cm-foot { display: flex; justify-content: flex-end; gap: 10px; padding: 18px 22px 20px; }
+.cm-btn { cursor: pointer; font: inherit; font-size: 13px; font-weight: 650; padding: 8px 16px; border-radius: 9px; border: 1px solid var(--border-str); transition: filter .12s, background .12s; }
+.cm-cancel { background: var(--surface-2); color: var(--text-1); }
+.cm-cancel:hover { background: var(--border); }
+.cm-delete { background: var(--st-critical); color: #fff; border-color: var(--st-critical); }
+.cm-delete:hover { filter: brightness(1.06); }
+.cm-delete:disabled { opacity: .6; cursor: default; filter: none; }
+
 .form-modal { position: fixed; inset: 0; z-index: 500; display: flex; align-items: center; justify-content: center; padding: 24px; }
 .fm-backdrop { position: absolute; inset: 0; background: rgba(15,20,28,.55); backdrop-filter: blur(2px); }
 .fm-dialog {
