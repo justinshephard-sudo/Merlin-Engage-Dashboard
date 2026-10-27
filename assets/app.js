@@ -178,6 +178,8 @@ const isWon = (d) => /won/i.test(d.demoStatus || "");                 // convert
 const isLost = (d) => /lost/i.test(d.demoStatus || "") || !!(d.closedLost && String(d.closedLost).trim());
 // A demo counts as completed when it's Completed, or resolved Won / Lost.
 const isDemoDone = (d) => isCompleted(d.demoStatus) || /won|lost/i.test(d.demoStatus || "");
+// No-show = demo Missed / No Show / Rescheduled (the prospect didn't attend the booked demo).
+const isNoShow = (d) => /miss|no.?show|resched/i.test(d.demoStatus || "");
 
 function computeMetrics(data) {
   const total = data.length;
@@ -185,6 +187,8 @@ function computeMetrics(data) {
   const setupScheduled = data.filter((d) => isScheduled(d.setupStatus) || isCompleted(d.setupStatus) || d.setup1Date).length;
   const setupCompleted = data.filter((d) => isCompleted(d.setupStatus)).length;
   const won = data.filter(isWon).length;
+  const noShows = data.filter(isNoShow).length;
+  const demoAttempts = demosCompleted + noShows;          // demos that were due: held + missed/rescheduled
   const closedLost = data.filter((d) => d.closedLost && String(d.closedLost).trim()).length;
   const csats = data.map((d) => d.csat).filter((n) => n != null);
   const avgCsat = csats.length ? csats.reduce((a, b) => a + b, 0) / csats.length : null;
@@ -207,6 +211,9 @@ function computeMetrics(data) {
     total, demosCompleted, setupScheduled, setupCompleted, won, closedLost,
     avgCsat, csatCount: csats.length, mrrTotal, preReqMet,
     onboardingsClosed, avgDemoToClose, demoToCloseCount: gaps.length,
+    noShows, demoAttempts,
+    showUpRate: demoAttempts ? demosCompleted / demoAttempts : null,
+    noShowRate: demoAttempts ? noShows / demoAttempts : 0,
     conversionRate: demosCompleted ? won / demosCompleted : 0,
     demoRate: total ? demosCompleted / total : 0,
     setupRate: demosCompleted ? setupCompleted / demosCompleted : 0,
@@ -290,6 +297,7 @@ const ICON = {
   star: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2l3.1 6.3 6.9 1-5 4.9 1.2 6.9L12 17.8 5.8 21l1.2-6.9-5-4.9 6.9-1z"/></svg>',
   money: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1v22M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>',
   lost: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M15 9l-6 6M9 9l6 6"/></svg>',
+  show: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M16 11l2 2 4-4"/></svg>',
   conv: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 6l-9.5 9.5-5-5L1 18"/><path d="M17 6h6v6"/></svg>',
   won: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 21h8M12 17v4M7 4h10v5a5 5 0 0 1-10 0zM7 4H4v2a3 3 0 0 0 3 3M17 4h3v2a3 3 0 0 1-3 3"/></svg>',
   trash: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2m2 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6M10 11v6M14 11v6"/></svg>',
@@ -303,6 +311,7 @@ function renderKPIs(m) {
   const tiles = [
     { label: "Firms in Pipeline", val: m.total, icon: ICON.firms, accent: "var(--lm-blue)", soft: "rgba(6,139,255,.12)", sub: `<span class="chip neu">${m.preReqMet} pre-reqs met</span>` },
     { label: "Demos Completed", val: m.demosCompleted, icon: ICON.demo, accent: "var(--lm-cyan)", soft: "rgba(3,176,219,.12)", sub: `<span class="chip ${m.demoRate >= 0.5 ? "pos" : "neu"}">${fmtPct(m.demoRate)} of pipeline</span>` },
+    { label: "Show-Up Rate", val: m.showUpRate != null ? fmtPct(m.showUpRate) : "—", icon: ICON.show, accent: "var(--lm-orange)", soft: "rgba(247,99,0,.12)", sub: `<span class="chip ${m.noShows ? "neg" : "neu"}">${fmtPct(m.noShowRate)} no-show</span> <span class="chip neu">${m.noShows} of ${m.demoAttempts} demos</span>` },
     { label: "Setups Completed", val: m.setupCompleted, icon: ICON.setup, accent: "#2f6db0", soft: "rgba(47,109,176,.14)", sub: `<span class="chip neu">${m.setupScheduled} scheduled</span>` },
     { label: "Conversion Rate", val: fmtPct(m.conversionRate), icon: ICON.conv, accent: "var(--st-good)", soft: "rgba(12,163,90,.13)", sub: `<span class="chip pos">${m.won} won</span> <span class="chip neu">of ${m.demosCompleted} demos</span>` },
     { label: "Onboardings Closed", val: m.onboardingsClosed, icon: ICON.won, accent: "var(--st-good)", soft: "rgba(12,163,90,.13)", sub: `<span class="chip pos">won &amp; setup complete</span>` },
@@ -1539,6 +1548,8 @@ function loadMock() {
     ["Cedar Legal","2410","Scheduled","Marcus","7/18/26","","Not Started","","","","FALSE","","","","","7/17/26","","N/A","Starter",""],
     ["Alderman LLP","2501","Completed - Lost","Priya","7/10/26","7/19/26","Not Started","","","","FALSE","","","Price","","7/09/26","","N/A","","0%"],
     ["Brightwater Firm","2555","Completed - Won","Justin","7/09/26","","Completed","7/11/26","7/13/26","7/13/26","TRUE","Dev","5","","$300","7/07/26","20551234","Signed","Enterprise","20"],
+    ["Lakeside Legal","2570","Missed","Marcus","7/15/26","","Not Started","","","","FALSE","","","","","7/13/26","","","",""],
+    ["Oakridge Partners","2575","Rescheduled","Priya","7/11/26","7/22/26","Not Started","","","","FALSE","","","","","7/10/26","","","",""],
     ["Pinnacle Counsel","2560","Completed - Lost","Marcus","7/08/26","","Not Started","","","","FALSE","","","Chose competitor","","7/06/26","","","Growth","5%"],
   ];
   STATE.data = raw.map((r, i) => normalizeRow(r, i + 2));
