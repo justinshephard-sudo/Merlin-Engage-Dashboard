@@ -636,14 +636,61 @@ let activeEditor = null;
 /* --------------------------------------------------------------------------
    Dashboard-wide filter (rep + demo/setup status) — scopes every panel & table
    -------------------------------------------------------------------------- */
-let FILTER = { rep: "", demoStatus: "", setupStatus: "" };
-function filterActive() { return !!(FILTER.rep || FILTER.demoStatus || FILTER.setupStatus); }
+let FILTER = { rep: "", demoStatus: "", setupStatus: "", datePreset: "", dateField: "demo", from: "", to: "" };
+function filterActive() { return !!(FILTER.rep || FILTER.demoStatus || FILTER.setupStatus || dateRange()); }
+
+/* Date range: preset (this month, last 30 days, …) or custom From/To, applied to the chosen date column. */
+const DATE_FIELD_GETTERS = {
+  demo:    (d) => parseDate(d.demoResched) || parseDate(d.demoDate),   // same "effective demo date" the trend uses
+  created: (d) => parseDate(d.createdAt),
+  closed:  (d) => parseDate(d.setupClosed),
+};
+function dateRange() {
+  const p = FILTER.datePreset;
+  if (!p) return null;
+  const now = new Date();
+  const day = (y, m, d) => new Date(y, m, d);
+  const today = day(now.getFullYear(), now.getMonth(), now.getDate());
+  const addDays = (d, n) => day(d.getFullYear(), d.getMonth(), d.getDate() + n);
+  const y = today.getFullYear(), m = today.getMonth(), q = Math.floor(m / 3) * 3;
+  let from = null, to = null;                            // inclusive day bounds
+  switch (p) {
+    case "today":       from = today; to = today; break;
+    case "thisWeek":    from = addDays(today, -today.getDay()); to = addDays(from, 6); break;   // Sun–Sat
+    case "last7":       from = addDays(today, -6); to = today; break;
+    case "thisMonth":   from = day(y, m, 1); to = day(y, m + 1, 0); break;
+    case "lastMonth":   from = day(y, m - 1, 1); to = day(y, m, 0); break;
+    case "last30":      from = addDays(today, -29); to = today; break;
+    case "last90":      from = addDays(today, -89); to = today; break;
+    case "thisQuarter": from = day(y, q, 1); to = day(y, q + 3, 0); break;
+    case "lastQuarter": from = day(y, q - 3, 1); to = day(y, q, 0); break;
+    case "ytd":         from = day(y, 0, 1); to = today; break;
+    case "custom": {
+      const iso = (v) => { const a = /^(\d{4})-(\d{2})-(\d{2})$/.exec(v || ""); return a ? day(+a[1], +a[2] - 1, +a[3]) : null; };
+      from = iso(FILTER.from); to = iso(FILTER.to);
+      if (!from && !to) return null;
+      break;
+    }
+    default: return null;
+  }
+  return { from, to: to ? addDays(to, 1) : null };      // `to` exclusive
+}
 function activeData() {
   const { rep, demoStatus, setupStatus } = FILTER;
-  return STATE.data.filter((d) =>
-    (!rep || d.demoRep === rep || d.setupRep === rep) &&
-    (!demoStatus || d.demoStatus === demoStatus) &&
-    (!setupStatus || d.setupStatus === setupStatus));
+  const range = dateRange();
+  const getDate = DATE_FIELD_GETTERS[FILTER.dateField] || DATE_FIELD_GETTERS.demo;
+  return STATE.data.filter((d) => {
+    if (rep && d.demoRep !== rep && d.setupRep !== rep) return false;
+    if (demoStatus && d.demoStatus !== demoStatus) return false;
+    if (setupStatus && d.setupStatus !== setupStatus) return false;
+    if (range) {
+      const dt = getDate(d);
+      if (!dt) return false;                             // no date in that column → outside any range
+      if (range.from && dt < range.from) return false;
+      if (range.to && dt >= range.to) return false;
+    }
+    return true;
+  });
 }
 function fillSelect(sel, options, allLabel) {
   if (!sel) return;
@@ -659,20 +706,25 @@ function populateFilters() {
   fillSelect(repSel, [...reps].sort(), "All reps");
   fillSelect(document.getElementById("fltDemo"), distinctValues("demoStatus"), "All demo statuses");
   fillSelect(document.getElementById("fltSetup"), distinctValues("setupStatus"), "All setup statuses");
-  FILTER = { rep: repSel.value, demoStatus: document.getElementById("fltDemo").value, setupStatus: document.getElementById("fltSetup").value };
+  readFilterInputs();
+}
+function readFilterInputs() {
+  const v = (id) => (document.getElementById(id) || {}).value || "";
+  FILTER = {
+    rep: v("fltRep"), demoStatus: v("fltDemo"), setupStatus: v("fltSetup"),
+    datePreset: v("fltDatePreset"), dateField: v("fltDateField") || "demo", from: v("fltFrom"), to: v("fltTo"),
+  };
+  const custom = document.getElementById("fltCustom");
+  if (custom) custom.classList.toggle("hidden", FILTER.datePreset !== "custom");
 }
 function onFilterChange() {
-  FILTER.rep = document.getElementById("fltRep").value;
-  FILTER.demoStatus = document.getElementById("fltDemo").value;
-  FILTER.setupStatus = document.getElementById("fltSetup").value;
+  readFilterInputs();
   renderDerived();
   renderTable();
 }
 function clearFilters() {
-  ["fltRep", "fltDemo", "fltSetup"].forEach((id) => { const s = document.getElementById(id); if (s) s.value = ""; });
-  FILTER = { rep: "", demoStatus: "", setupStatus: "" };
-  renderDerived();
-  renderTable();
+  ["fltRep", "fltDemo", "fltSetup", "fltDatePreset", "fltFrom", "fltTo"].forEach((id) => { const s = document.getElementById(id); if (s) s.value = ""; });
+  onFilterChange();
 }
 
 function renderTable() {
@@ -1582,7 +1634,7 @@ function boot() {
   document.getElementById("cmDelete").addEventListener("click", confirmDelete);
   document.addEventListener("keydown", (e) => { if (e.key === "Escape") { closeFormModal(); closeSubModal(); closeConfirm(); } });
   document.getElementById("reviewJump").addEventListener("click", () => document.getElementById("reviewSection").scrollIntoView({ behavior: "smooth", block: "start" }));
-  ["fltRep", "fltDemo", "fltSetup"].forEach((id) => { const s = document.getElementById(id); if (s) s.addEventListener("change", onFilterChange); });
+  ["fltRep", "fltDemo", "fltSetup", "fltDatePreset", "fltDateField", "fltFrom", "fltTo"].forEach((id) => { const s = document.getElementById(id); if (s) s.addEventListener("change", onFilterChange); });
   const clr = document.getElementById("fltClear"); if (clr) clr.addEventListener("click", clearFilters);
 
   if (MOCK) { signIn(); return; }              // mock bypasses auth

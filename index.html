@@ -69,6 +69,31 @@
       <select id="fltRep" class="fb-select"><option value="">All reps</option></select>
       <select id="fltDemo" class="fb-select"><option value="">All demo statuses</option></select>
       <select id="fltSetup" class="fb-select"><option value="">All setup statuses</option></select>
+      <span class="fb-divider"></span>
+      <select id="fltDatePreset" class="fb-select" title="Date range">
+        <option value="">All time</option>
+        <option value="today">Today</option>
+        <option value="thisWeek">This week</option>
+        <option value="last7">Last 7 days</option>
+        <option value="thisMonth">This month</option>
+        <option value="lastMonth">Last month</option>
+        <option value="last30">Last 30 days</option>
+        <option value="last90">Last 90 days</option>
+        <option value="thisQuarter">This quarter</option>
+        <option value="lastQuarter">Last quarter</option>
+        <option value="ytd">Year to date</option>
+        <option value="custom">Custom range…</option>
+      </select>
+      <span class="fb-custom hidden" id="fltCustom">
+        <input type="date" id="fltFrom" class="fb-select fb-date" aria-label="From date">
+        <span class="fb-to">to</span>
+        <input type="date" id="fltTo" class="fb-select fb-date" aria-label="To date">
+      </span>
+      <select id="fltDateField" class="fb-select" title="Which date the range applies to">
+        <option value="demo">by Demo date</option>
+        <option value="created">by Created at</option>
+        <option value="closed">by Set up closed date</option>
+      </select>
       <span class="fb-count" id="fltCount"></span>
       <button class="fb-clear hidden" id="fltClear">Clear ✕</button>
       <span class="fb-spacer"></span>

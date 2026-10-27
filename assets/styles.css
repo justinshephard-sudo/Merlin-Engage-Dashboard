@@ -158,6 +158,11 @@ body { overflow-x: clip; }
 }
 .fb-select:hover { border-color: var(--border-str); }
 .fb-select:focus { outline: 2px solid var(--lm-blue); outline-offset: 1px; }
+.fb-divider { width: 1px; height: 22px; background: var(--border); }
+.fb-custom { display: inline-flex; align-items: center; gap: 6px; }
+.fb-custom.hidden { display: none; }
+.fb-date { cursor: text; padding: 6px 8px; color-scheme: light dark; }
+.fb-to { font-size: 12.5px; color: var(--text-2); }
 .fb-count { font-size: 12.5px; color: var(--text-2); font-weight: 600; margin-left: auto; }
 .fb-clear {
   font: inherit; font-size: 12.5px; font-weight: 600; cursor: pointer;
